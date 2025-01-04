@@ -1,0 +1,20 @@
+{
+  "name": "tt-cli",
+  "version": "1.0.0",
+  "description": "CLI tool for TT application",
+  "main": "src/index.js",
+  "bin": {
+    "tt": "./src/index.js"
+  },
+  "dependencies": {
+    "@tt-services": "file:../tt-services",
+    "commander": "^11.0.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
