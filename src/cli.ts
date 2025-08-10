@@ -5,6 +5,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { getNotes as getNotesCached, filterNotes, displayNotes, getNoteById, openNoteLink } from './notes.ts';
 import { syncNotes } from './parse-note.ts';
+import { runAgent } from './agent.ts';
 
 // Try loading from .config/tt-cli/.env first, then fallback to local .env
 const configPath = join(homedir(), '.config', 'tt-cli', '.env');
@@ -97,6 +98,12 @@ note
       console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
     }
+  });
+
+program.command('agent')
+  .description('Run the agent')
+  .action(async () => {
+    await runAgent();
   });
 
 program.parse();

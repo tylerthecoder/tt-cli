@@ -3,10 +3,12 @@
     "tt": "./src/index.js"
   },
   "dependencies": {
-    "@tt-services": "github:tylerthecoder/tt-services#10dc2eda78b2e3c395958b108d00bfce98da7a8f",
+    "@openai/agents": "^0.0.15",
+    "@tt-services": "link:tt-services",
     "commander": "^11.0.0",
     "dotenv": "^16.4.7",
     "ink": "^4.4.1",
+    "inquirer": "^12.9.1",
     "js-yaml": "^4.1.0",
     "react": "^18.3.1",
     "react-devtools-core": "^6.1.5"
@@ -21,6 +23,9 @@
   "name": "tt-cli",
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "cli": "bun run src/cli.ts"
   },
   "version": "1.0.0"
 }
