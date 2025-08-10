@@ -1,21 +1,19 @@
 #!/usr/bin/env bun
-import { mkdir, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { fileURLToPath } from 'url';
+import { $ } from 'bun';
 
-const execAsync = promisify(exec);
+// Paths
+const cliFilePath = join(dirname(import.meta.path), 'src', 'cli.ts');
+const tempScriptPath = join(dirname(import.meta.path), 'tt');
+const binPath = '/usr/local/bin/tt';
+
+function makeScriptContent(): string {
+    return `#!/usr/bin/env bash\nset -euo pipefail\nexec bun run \"${cliFilePath}\" \"$@\"\n`;
+}
 
 async function ensureDirectory(path: string) {
-    try {
-        await mkdir(path, { recursive: true });
-    } catch (error) {
-        if ((error as any).code !== 'EEXIST') {
-            throw error;
-        }
-    }
+    await $`mkdir -p ${path}`.quiet();
 }
 
 async function createConfigFile() {
@@ -25,48 +23,37 @@ async function createConfigFile() {
     await ensureDirectory(configDir);
 
     // Create default .env if it doesn't exist
-    try {
-        await writeFile(envPath, '# TT-CLI Configuration\n', { flag: 'wx' });
+    if (!(await Bun.file(envPath).exists())) {
+        await Bun.write(envPath, '# TT-CLI Configuration\n');
         console.log('Created config file at:', envPath);
-    } catch (error) {
-        if ((error as any).code !== 'EEXIST') {
-            throw error;
-        }
+    } else {
         console.log('Config file already exists at:', envPath);
     }
 }
 
 async function install() {
     try {
-        // Create config directory and file
         await createConfigFile();
+        const scriptContent = makeScriptContent();
 
-        // Determine absolute project root from this installer location
-        const projectRoot = dirname(fileURLToPath(new URL('.', import.meta.url)));
-        const wrapperPath = join(projectRoot, 'tt');
+        await Bun.write(tempScriptPath, scriptContent);
+        await $`chmod +x ${tempScriptPath}`.quiet();
 
-        // Create a small wrapper that runs the CLI via bun from the project directory
-        const wrapperContent = `#!/usr/bin/env bash\nset -euo pipefail\nPROJECT_ROOT=${projectRoot.replace(/\\/g, '\\\\')}\ncd \"$PROJECT_ROOT\"\nexec bun \"$PROJECT_ROOT/src/cli.ts\" \"$@\"\n`;
-
-        await writeFile(wrapperPath, wrapperContent, { mode: 0o755 });
-
-        // Install to /usr/local/bin using sudo
-        const binPath = '/usr/local/bin';
-        console.log('Moving wrapper to /usr/local/bin (requires sudo)...');
+        console.log(`Installing to ${binPath} (requires sudo)...`);
 
         try {
-            await execAsync(`sudo mv ${wrapperPath} ${join(binPath, 'tt')}`);
-            await execAsync(`sudo chmod +x ${join(binPath, 'tt')}`);
+            await $`sudo mv ${tempScriptPath} ${binPath}`;
+            await $`sudo chmod +x ${binPath}`;
         } catch (error) {
             console.error('Failed to move wrapper to /usr/local/bin. Do you have sudo access?');
             console.error('You can try running the move command manually:');
-            console.error(`sudo mv ${wrapperPath} ${join(binPath, 'tt')}`);
-            console.error(`sudo chmod +x ${join(binPath, 'tt')}`);
+            console.error(`sudo mv ${tempScriptPath} ${binPath}`);
+            console.error(`sudo chmod +x ${binPath}`);
             process.exit(1);
         }
 
         console.log(`\nInstallation complete! The 'tt' command is now available.`);
-        console.log(`Wrapper installed to: ${join(binPath, 'tt')}`);
+        console.log(`Wrapper installed to: ${binPath}`);
     } catch (error) {
         console.error('Installation failed:', error);
         process.exit(1);

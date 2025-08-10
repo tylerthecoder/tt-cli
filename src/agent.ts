@@ -1,9 +1,38 @@
-import { agent } from '@tt-services/src/agent/agent';
+import { agent, tt } from '@tt-services/src/agent/agent';
 import { run, RunResult, RunState, RunToolApprovalItem } from '@openai/agents';
 import inquirer from 'inquirer';
 
 
-export const runAgent = async () => {
+const renderToolCall = async (toolCall: RunToolApprovalItem) => {
+    const json = toolCall.toJSON();
+    const toolCallName: string = json.rawItem && "name" in json.rawItem ? json.rawItem.name : "";
+    const toolCallArguments: Record<string, any> = json.rawItem && "arguments" in json.rawItem && json.rawItem.arguments ? JSON.parse(json.rawItem.arguments) : {};
+
+    let displayData = `${toolCallName} with parameters:\n`;
+
+    for (const [key, value] of Object.entries(toolCallArguments)) {
+        const isNoteId = key === "noteId";
+
+        if (isNoteId) {
+            const noteMetadata = await tt.notes.getNoteMetadataById(value);
+
+            displayData += `  Note:
+    - Passed ID: ${value}
+    - Title: ${noteMetadata?.title}
+    - Date: ${noteMetadata?.date}
+    - Tags: ${noteMetadata?.tags?.join(", ")}\n`;
+
+            continue;
+        }
+
+        displayData += `  ${key}: ${value}\n`;
+    }
+
+    return displayData;
+};
+
+
+export async function runAgent() {
     const prompt = await inquirer.prompt([
         {
             type: 'input',
@@ -11,7 +40,6 @@ export const runAgent = async () => {
             message: 'What do you want the agent to do?',
         },
     ]);
-
 
     let result: RunResult<any, any> = await run(agent, prompt.prompt);
 
@@ -66,15 +94,14 @@ export const runAgent = async () => {
                 }
 
                 const toolApprovalItem = interruption as RunToolApprovalItem;
-                const json = toolApprovalItem.toJSON();
 
-                console.log("The agent wants to run the following tool: ", json);
+                const toolCallDisplay = await renderToolCall(toolApprovalItem);
 
                 const answer = await inquirer.prompt([
                     {
                         type: 'confirm',
                         name: 'confirm',
-                        message: `Do you approve of the agent running the following tool? ${json}`,
+                        message: `Do you approve of the agent running the following tool?\n${toolCallDisplay}`,
                     },
                 ]);
 
