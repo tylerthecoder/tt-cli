@@ -6,7 +6,8 @@ import { config } from 'dotenv';
 import { join } from 'path';
 import { homedir } from 'os';
 import { exec, spawn } from 'child_process';
-import { getNotes as getNotesCached, openNoteLink, tt } from './notes.ts';
+import { getNotes as getNotesCached, openNoteLink } from './notes.ts';
+import { getTT } from './tt-services.ts';
 
 const loadEnv = () => {
     const configPath = join(homedir(), '.config', 'tt-cli', '.env');
@@ -207,6 +208,7 @@ function NotesTui() {
             if (!target) return;
             (async () => {
                 try {
+                    const tt = await getTT();
                     const full = await tt.notes.getNoteById(target.id);
                     if (!full) return;
                     const body = `# ${full.title}\n\n${full.content || ''}\n`;

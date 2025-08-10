@@ -1,17 +1,14 @@
-import { DatabaseSingleton, TylersThings } from '@tt-services';
 import type { NoteMetadata as NoteType, Note } from '@tt-services';
 import { join } from 'path';
 import { homedir } from 'os';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { exec } from 'child_process';
+import { getTT } from './tt-services';
 
 const CACHE_DIR = join(homedir(), '.cache', 'tt-cli');
 const NOTES_CACHE_FILE = join(CACHE_DIR, 'notes.json');
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-export const db = await DatabaseSingleton.getInstance();
-export const tt = await TylersThings.make(db);
 
 interface CacheData {
     timestamp: number;
@@ -38,6 +35,7 @@ export async function getNotes(): Promise<NoteType[]> {
     } catch (error) {
         // Non-fatal; fall back to fetching fresh
     }
+    const tt = await getTT();
     const notes = await tt.notes.getAllNotesMetadata();
 
     try {
@@ -73,6 +71,7 @@ export function displayNotes(notes: NoteType[], format: 'text' | 'json' = 'text'
 }
 
 export async function getNoteById(id: string): Promise<Note | null> {
+    const tt = await getTT();
     return tt.notes.getNoteById(id);
 }
 

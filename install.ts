@@ -9,7 +9,11 @@ const tempScriptPath = join(dirname(import.meta.path), 'tt');
 const binPath = '/usr/local/bin/tt';
 
 function makeScriptContent(): string {
-    return `#!/usr/bin/env bash\nset -euo pipefail\nexec bun run \"${cliFilePath}\" \"$@\"\n`;
+    const bunBinPath = Bun.which('bun');
+    if (!bunBinPath) {
+        throw new Error('Bun is not installed');
+    }
+    return `#!/usr/bin/env bash\nset -euo pipefail\nexec ${bunBinPath} run \"${cliFilePath}\" \"$@\"\n`;
 }
 
 async function ensureDirectory(path: string) {

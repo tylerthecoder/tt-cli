@@ -1,14 +1,15 @@
-import { join, dirname } from 'path';
+import { join } from 'path';
 import type { NoteType, Note } from '@tt-services';
 import * as yaml from 'js-yaml';
 import { readdir } from 'fs/promises';
 import { readFile } from 'fs/promises';
-import { db, getNoteById, tt } from './notes.ts';
+import { getNoteById } from './notes.ts';
 import { createInterface } from 'readline/promises';
 import { writeFile } from 'fs/promises';
-import type { CreatableNote, NoteMetadata } from '@tt-services/src/services/notes';
+import type { CreatableNote } from '@tt-services/src/services/notes';
 import { stat } from 'fs/promises';
 import { existsSync } from 'fs';
+import { getTT } from './tt-services.ts';
 
 // Get the directory of the current file
 const NOTES_DIR = "/home/tylord/dev/tt-notes/notes"
@@ -339,7 +340,9 @@ export async function extractCreatableNotes(dir: string = NOTES_DIR) {
 export async function findRemoteNotesToDownload(dir: string = NOTES_DIR): Promise<NoteType[]> {
     const notes = await scanNotesDirectory(dir);
 
+    const tt = await getTT();
     const remoteNotes = await tt.notes.getAllNotesMetadata();
+
 
     const notesToDownload: NoteType[] = [];
 
@@ -362,6 +365,7 @@ type Conflict = {
 
 export async function findConflicts(dir: string = NOTES_DIR) {
     const notes = await scanNotesDirectory(dir);
+    const tt = await getTT();
     const remoteNotes = await tt.notes.getAllNotes();
 
     const conflicts: Conflict[] = [];
@@ -407,7 +411,7 @@ export async function findConflicts(dir: string = NOTES_DIR) {
 
 
 export async function syncNotes(dir: string = NOTES_DIR, should_confirm: boolean = true) {
-
+    const tt = await getTT();
     const creatableNotes = await extractCreatableNotes(dir);
     if (creatableNotes.length > 0) {
         console.log(colors.green, `Found ${creatableNotes.length} notes on local to push to server. \n - ${creatableNotes.map(({ note }) => note.title).join("\n - ")}`, colors.reset);

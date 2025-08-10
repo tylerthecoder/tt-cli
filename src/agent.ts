@@ -1,6 +1,7 @@
-import { agent, tt } from '@tt-services/src/agent/agent';
 import { run, RunResult, RunState, RunToolApprovalItem } from '@openai/agents';
 import inquirer from 'inquirer';
+import { getTT } from './tt-services';
+import { makeAgent } from '@tt-services/src/agent/agent';
 
 
 const renderToolCall = async (toolCall: RunToolApprovalItem) => {
@@ -14,6 +15,7 @@ const renderToolCall = async (toolCall: RunToolApprovalItem) => {
         const isNoteId = key === "noteId";
 
         if (isNoteId) {
+            const tt = await getTT();
             const noteMetadata = await tt.notes.getNoteMetadataById(value);
 
             displayData += `  Note:
@@ -33,6 +35,7 @@ const renderToolCall = async (toolCall: RunToolApprovalItem) => {
 
 
 export async function runAgent() {
+    const agent = await makeAgent();
     const prompt = await inquirer.prompt([
         {
             type: 'input',
