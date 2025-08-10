@@ -42,7 +42,7 @@ async function install() {
 
         // Build the project
         console.log('Building project...');
-        await execAsync('bun build ./index.ts --compile --outfile tt');
+        await execAsync('bun build ./src/cli.ts --compile --outfile tt');
 
         // Make the binary executable
         await execAsync('chmod +x tt');

@@ -1,20 +1,26 @@
 {
-  "name": "tt-cli",
-  "version": "1.0.0",
-  "description": "CLI tool for TT application",
-  "main": "src/index.js",
   "bin": {
     "tt": "./src/index.js"
   },
   "dependencies": {
-    "@tt-services": "file:../tt-services",
+    "@tt-services": "github:tylerthecoder/tt-services#10dc2eda78b2e3c395958b108d00bfce98da7a8f",
     "commander": "^11.0.0",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "ink": "^4.4.1",
+    "js-yaml": "^4.1.0",
+    "react": "^18.3.1",
+    "react-devtools-core": "^6.1.5"
   },
+  "description": "CLI tool for TT application",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/react": "^18.3.7"
   },
+  "main": "src/index.js",
+  "name": "tt-cli",
   "peerDependencies": {
     "typescript": "^5.0.0"
-  }
+  },
+  "version": "1.0.0"
 }
