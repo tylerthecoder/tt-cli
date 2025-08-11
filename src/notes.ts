@@ -48,9 +48,43 @@ export async function getNotes(): Promise<NoteType[]> {
     return notes;
 }
 
-export async function getNotesAndUntrackedGoogleDocs() {
+export async function getNotesAndUntrackedGoogleDocs(options: { ignoreTimeout?: boolean; ignoreCache?: boolean } = {}) {
+    const GOOGLE_NOTES_CACHE_FILE = join(CACHE_DIR, 'google-notes.json');
+
+    await ensureCacheDir();
+
+    // Check cache unless ignoreCache is true
+    if (!options.ignoreCache) {
+        try {
+            if (existsSync(GOOGLE_NOTES_CACHE_FILE)) {
+                const cacheContent = await readFile(GOOGLE_NOTES_CACHE_FILE, 'utf-8');
+                const cache: CacheData & { googleDocs: any[] } = JSON.parse(cacheContent);
+
+                // Return cached data if within TTL or ignoreTimeout is true
+                if (options.ignoreTimeout || Date.now() - cache.timestamp <= CACHE_TTL) {
+                    return { notes: cache.notes, googleDocs: cache.googleDocs };
+                }
+            }
+        } catch (error) {
+            // Non-fatal; fall back to fetching fresh
+        }
+    }
+
     const tt = await getTT();
     const notesAndUntrackedGoogleDocs = await tt.googleNotes.getAllNotesAndUntrackedGoogleDocs("tylertracy1999@gmail.com");
+
+    // Always write to cache (even when ignoreCache is true)
+    try {
+        const cacheData = {
+            timestamp: Date.now(),
+            notes: notesAndUntrackedGoogleDocs.notes,
+            googleDocs: notesAndUntrackedGoogleDocs.googleDocs
+        };
+        await writeFile(GOOGLE_NOTES_CACHE_FILE, JSON.stringify(cacheData, null, 2));
+    } catch (error) {
+        // Non-fatal
+    }
+
     return notesAndUntrackedGoogleDocs;
 }
 

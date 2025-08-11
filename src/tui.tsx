@@ -65,8 +65,8 @@ function useNotesData() {
     const [tags, setTags] = useState<string[] | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    async function fetchNotes() {
-        const { notes, googleDocs } = await getNotesAndUntrackedGoogleDocs();
+    async function fetchNotes(ignoreCache: boolean = false) {
+        const { notes, googleDocs } = await getNotesAndUntrackedGoogleDocs({ ignoreTimeout: true, ignoreCache });
         const tagSet = new Set<string>();
         for (const n of notes) (n.tags || []).forEach(t => tagSet.add(t));
         const displayItems: DisplayItem[] = [];
@@ -95,12 +95,12 @@ function useNotesData() {
         fetchNotes();
     }, []);
 
-    return { notes, tags, error, fetchNotes };
+    return { notes, tags, error, fetchNotes, reload: () => fetchNotes(true) };
 }
 
 function NotesTui() {
     const { exit } = useApp();
-    const { notes, tags, error, fetchNotes } = useNotesData();
+    const { notes, tags, error, reload } = useNotesData();
     const [mode, setMode] = useState<Mode>('list');
     const [query, setQuery] = useState('');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -131,7 +131,7 @@ function NotesTui() {
         // Global refresh shortcut: r or Ctrl+L (disabled while typing in search mode)
         if (mode !== 'search' && (input === 'r' || (key.ctrl && input === 'l'))) {
             try { process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); } catch { }
-            fetchNotes();
+            reload();
             return;
         }
 
