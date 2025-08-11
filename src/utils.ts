@@ -1,6 +1,7 @@
 import { TylersThings } from '@tt-services/src';
 import { createInterface } from 'readline/promises';
 import pino, { type Logger } from 'pino';
+import inquirer from 'inquirer';
 
 export const colors = {
     reset: "\x1b[0m",
@@ -15,6 +16,8 @@ export const colors = {
 
 export async function confirm(logger: Logger, prompt: string) {
     await new Promise(resolve => logger.flush(resolve));
+    console.log("\n")
+
 
     const rl = createInterface({
         input: process.stdin,
@@ -23,6 +26,19 @@ export async function confirm(logger: Logger, prompt: string) {
     const answer = await rl.question(prompt);
     rl.close();
     return answer.toLowerCase() === 'y';
+}
+
+export const pickOptionCli = async <T extends string>(logger: Logger, prompt: string, options: T[]): Promise<T> => {
+    await new Promise(resolve => logger.flush(resolve));
+    const answer = await inquirer.prompt([
+        {
+            type: 'list',
+            name: 'option',
+            message: prompt,
+            choices: options
+        }
+    ])
+    return answer.option;
 }
 
 export const logger = pino({

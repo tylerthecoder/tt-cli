@@ -1,10 +1,9 @@
-import { join } from 'path';
+import path, { join } from 'path';
 import type { NoteType, Note } from '@tt-services';
 import * as yaml from 'js-yaml';
-import { readdir, readFile, writeFile, stat, exists } from 'fs/promises';
-import { getNoteById } from './notes.ts';
-import type { CreatableNote } from '@tt-services/src/services/notes';
-import { confirm, getTT, logger as baseLogger } from './utils.ts';
+import { readdir, readFile, writeFile, stat, exists, unlink } from 'fs/promises';
+import type { CreatableNote, NoteMetadata } from '@tt-services/src/services/notes';
+import { confirm, getTT, logger as baseLogger, pickOptionCli } from './utils.ts';
 import { NOTES_DIR } from './config.ts';
 
 const logger = baseLogger.child({
@@ -21,49 +20,32 @@ const requireNotesDir = (dir?: string) => {
     return notesDir;
 }
 
-
-/**
- * Generates a filesystem-safe filename for a note, handling potential collisions.
- * @param title - The note's title (or a fallback like 'untitled').
- * @param noteId - The note's ID (used as a fallback if title is empty after sanitization).
- * @param existingFilenamesLowercase - A Set containing lowercase versions of existing filenames in the target directory to check for collisions.
- * @returns A safe filename (e.g., "my-note.md" or "my-note_1.md").
- */
-export function generateSafeFilename(
-    title: string,
-    noteId: string,
-    existingFilenamesLowercase: Set<string>
-): string {
-    const safeTitle = (title || 'untitled')
+export async function generateNoteFilename(noteMetadata: NoteMetadata, notesDir?: string): Promise<string> {
+    let safeTitle = noteMetadata.title
         .toLowerCase()
         .replace(/[^a-z0-9_.\-]+/g, '-') // Allow underscore, dot, hyphen
         .replace(/-+/g, '-')
         .replace(/^-+|-+$/g, '');
 
-    let baseFileName = `${safeTitle || noteId}.md`; // Fallback to id if title becomes empty
+    notesDir = requireNotesDir(notesDir);
 
-    let finalFileName = baseFileName;
-    let counter = 1;
-    // Check for collisions (case-insensitive)
-    while (existingFilenamesLowercase.has(finalFileName.toLowerCase())) {
-        logger.warn({ baseFileName, currentName: finalFileName }, 'Filename collision detected; trying alternative');
-        finalFileName = `${safeTitle || noteId}_${counter++}.md`;
+    while (true) {
+        const notePath = path.join(notesDir, `${safeTitle}.md`);
+        if (!await exists(notePath)) {
+            break;
+        }
+        safeTitle = `${safeTitle}-${Math.random().toString(36).substring(2, 15)}`;
     }
-    return finalFileName;
+
+    return `${safeTitle}.md`;
 }
 
-/**
- * Formats a note object into a markdown string with YAML frontmatter.
- * Requires a full Note object now.
- * @param note - The note object including id, date, updatedAt, title, content, tags.
- * @returns The markdown formatted string.
- */
 export function formatNoteAsMarkdown(note: NoteType): string {
     if ('_id' in note) {
         delete note._id;
     }
 
-    const allButContent = Object.fromEntries(Object.entries(note).filter(([key]) => key !== 'content'));
+    const allButContent = Object.fromEntries(Object.entries(note).filter(([key]) => key !== 'content' && key !== "googleDocContent"));
 
     const fmString = yaml.dump(allButContent, { skipInvalid: true });
 
@@ -74,6 +56,27 @@ export function formatNoteAsMarkdown(note: NoteType): string {
         note.content,
     ].join('\n');
 }
+
+export async function saveNoteToFs(note: NoteType, opts: { dir?: string, confirmOverwrite?: boolean, shouldLog?: boolean } = { dir: undefined, confirmOverwrite: false, shouldLog: true }) {
+    const filename = await generateNoteFilename(note);
+    const content = formatNoteAsMarkdown(note);
+    const notesDir = requireNotesDir(opts.dir);
+    const filePath = path.join(notesDir, filename);
+    const confirmOverwrite = opts.confirmOverwrite ?? false;
+    if (confirmOverwrite && await exists(filePath)) {
+        const confirmed = await confirm(logger, `Note already exists locally at ${filename}, overwrite? (y/n)`);
+        if (!confirmed) {
+            logger.info({ title: note.title, path: filePath }, 'Skipping note');
+            return;
+        }
+    }
+    await writeFile(filePath, content);
+    if (opts.shouldLog ?? true) {
+        logger.info({ title: note.title, path: filePath, id: note.id }, 'Saved note to file system');
+    }
+}
+
+
 
 export type NoteFile = {
     content: string;
@@ -159,7 +162,7 @@ export async function extractNoteFromMarkdownFile(file: NoteFile): Promise<NoteT
         return null;
     }
 
-    const title = file.path.split('/').pop()?.split('.').shift() ?? null;
+    const title = frontmatter?.title ?? null;
     if (!title) {
         logger.warn({ path: file.path, id }, 'Note file has no title, skipping');
         return null;
@@ -175,43 +178,8 @@ export async function extractNoteFromMarkdownFile(file: NoteFile): Promise<NoteT
     return { id, title, content, createdAt, updatedAt, tags, date: createdAt, published, ...extraData }
 }
 
-export async function tryFormatMarkdownFiles(file: NoteFile, should_confirm: boolean = true) {
-    const frontmatter = await extractFrontmatterFromMarkdownFile(file);
-
-    if (!frontmatter) {
-        logger.warn({ path: file.path }, 'Note file has no frontmatter, skipping');
-        return null;
-    }
-
-    const id = frontmatter?.id ?? null;
-    if (!id) {
-        logger.warn({ path: file.path }, 'Note file has no id, skipping');
-        return null;
-    }
-
-    const note = await getNoteById(id);
-
-    if (!note) {
-        logger.warn({ path: file.path, id }, 'Note file has no note, skipping');
-        return null;
-    }
-
-    if (should_confirm) {
-        const confirmed = await confirm(logger, `Format note ${id}? (y/n)`);
-
-        if (!confirmed) {
-            logger.info({ path: file.path, id }, 'Skipping note');
-            return null;
-        }
-    }
-
-    const newContent = formatNoteAsMarkdown(note);
-
-    await writeFile(file.path, newContent);
-}
-
-// Only return notes that aren't in the system right now
-export async function extractCreatableNote(file: NoteFile): Promise<CreatableNote | null> {
+// Only return notes that aren't in the system
+export async function findUnsyncedLocalNotes(file: NoteFile): Promise<CreatableNote | null> {
     const frontmatter = await extractFrontmatterFromMarkdownFile(file);
 
     const id = frontmatter?.id ?? null;
@@ -280,16 +248,6 @@ export async function scanNotesDirectory(notesDir?: string) {
     return notes;
 }
 
-export async function formatAllNotes(dir?: string, should_confirm: boolean = true) {
-    dir = requireNotesDir(dir);
-    const files = await getNoteFilePaths(dir);
-
-    for (const filePath of files) {
-        const content = await readFile(filePath, "utf8");
-        await tryFormatMarkdownFiles({ content, path: filePath }, should_confirm);
-    }
-}
-
 export async function extractCreatableNotes(dir?: string) {
     dir = requireNotesDir(dir);
     const files = await getNoteFilePaths(dir);
@@ -297,7 +255,7 @@ export async function extractCreatableNotes(dir?: string) {
     const creatableNotes: { path: string, note: CreatableNote }[] = [];
 
     for (const filePath of files) {
-        const note = await extractCreatableNote({ content: await readFile(filePath, "utf8"), path: filePath });
+        const note = await findUnsyncedLocalNotes({ content: await readFile(filePath, "utf8"), path: filePath });
         if (note) {
             creatableNotes.push({ path: filePath, note: note });
         }
@@ -306,7 +264,7 @@ export async function extractCreatableNotes(dir?: string) {
     return creatableNotes;
 }
 
-export async function findRemoteNotesToDownload(dir?: string): Promise<NoteType[]> {
+export async function findLocalNotesMissingOnServer(dir?: string): Promise<Array<{ note: NoteType, path: string }>> {
     dir = requireNotesDir(dir);
     const notes = await scanNotesDirectory(dir);
 
@@ -314,16 +272,33 @@ export async function findRemoteNotesToDownload(dir?: string): Promise<NoteType[
     const remoteNotes = await tt.notes.getAllNotesMetadata();
 
 
-    const notesToDownload: NoteType[] = [];
+    const notesMissingOnServer: Array<{ note: NoteType, path: string }> = [];
 
-    for (const { note } of notes) {
+    for (const { note, path } of notes) {
         if (remoteNotes.some((remoteNote) => remoteNote.id === note.id)) {
             continue;
         }
 
-        notesToDownload.push(note);
+        notesMissingOnServer.push({ note, path });
     }
 
+    return notesMissingOnServer;
+}
+
+export async function findRemoteNotesToDownload(dir?: string): Promise<Note[]> {
+    dir = requireNotesDir(dir);
+    const localNotes = await scanNotesDirectory(dir);
+
+    const tt = await getTT();
+    const remoteNotes = await tt.notes.getAllNotes();
+
+    const localIds = new Set(localNotes.map(({ note }) => note.id));
+    const notesToDownload: Note[] = [];
+    for (const remoteNote of remoteNotes) {
+        if (!localIds.has(remoteNote.id)) {
+            notesToDownload.push(remoteNote);
+        }
+    }
     return notesToDownload;
 }
 
@@ -407,11 +382,7 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
                 }
 
                 const createdNote = await tt.notes.createNote(note);
-
-                logger.info({ title: createdNote.title, id: createdNote.id }, 'Created note');
-
-                const newContent = formatNoteAsMarkdown(createdNote);
-                await writeFile(path, newContent);
+                await saveNoteToFs(createdNote, { dir, confirmOverwrite: false, shouldLog: true });
             }
         }
     } else {
@@ -419,7 +390,7 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
     }
 
     // ========
-    // Find remote notes that don't exist locally
+    // Find remote notes that don't exist locally (download)
     // ========
     const notesToDownload = await findRemoteNotesToDownload(dir);
 
@@ -430,20 +401,51 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
 
         if (confirmDownload) {
             for (const note of notesToDownload) {
-                const newContent = formatNoteAsMarkdown(note);
-                const filePath = join(dir, `${note.title}.md`);
-
-                if (await exists(filePath)) {
-                    logger.warn({ title: note.title, filePath }, 'Note already exists locally, skipping');
-                    continue;
-                }
-                await writeFile(filePath, newContent);
-                logger.info({ title: note.title, filePath }, 'Downloaded note');
+                await saveNoteToFs(note, { dir, confirmOverwrite: true, shouldLog: true });
             }
         }
 
     } else {
         logger.info("No notes to download");
+    }
+
+    // ========
+    // Find local notes whose ids don't exist on the server (recreate or delete)
+    // ========
+    const missingOnServer = await findLocalNotesMissingOnServer(dir);
+
+    if (missingOnServer.length > 0) {
+        logger.warn({ count: missingOnServer.length, titles: missingOnServer.map(({ note }) => note.title) }, 'Found local notes with ids that are missing on server');
+
+        for (const { note, path } of missingOnServer) {
+            logger.info({ title: note.title, id: note.id, path }, 'Local note id missing on server');
+            const selectedOption = await pickOptionCli(logger, `How should be handle this?`, ['recreate', 'delete', 'skip']);
+            switch (selectedOption) {
+                case 'recreate':
+                    const createdNote = await tt.notes.createNote({
+                        title: note.title,
+                        content: note.content,
+                        date: note.date,
+                        tags: note.tags ?? [],
+                    });
+                    await saveNoteToFs(createdNote, { dir, confirmOverwrite: false, shouldLog: true });
+                    continue;
+                case 'delete':
+                    const confirmed = await confirm(logger, `Delete local file for "${note.title}" (missing on server)? (y/n)`);
+                    if (confirmed) {
+                        await unlink(path);
+                        logger.info({ title: note.title, path }, 'Deleted local file for note missing on server');
+                    } else {
+                        logger.info({ title: note.title, path }, 'Skipped note missing on server');
+                    }
+                    continue;
+                case 'skip':
+                    logger.info({ title: note.title, path }, 'Skipped note missing on server');
+                    continue;
+            }
+        }
+    } else {
+        logger.info('No local notes are missing on server');
     }
 
     // ========

@@ -1,10 +1,9 @@
 #!/usr/bin/env bun
 import React, { useEffect, useMemo, useState } from 'react';
 import { render, Box, Text, useApp, useInput } from 'ink';
-import type { NoteMetadata as NoteType } from '@tt-services';
 import { spawn } from 'child_process';
-import { getNotesAndUntrackedGoogleDocs, getNotes as getNotesCached, openGoogleDocLink, openNoteLink } from './notes.ts';
-import { getTT } from './tt-services.ts';
+import { getNotesAndUntrackedGoogleDocs, openGoogleDocLink, openNoteLink } from './notes.ts';
+import { getTT } from './utils.ts';
 
 const enterAltScreen = () => {
     try {
