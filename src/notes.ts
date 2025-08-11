@@ -4,7 +4,7 @@ import { homedir } from 'os';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { $ } from 'bun';
-import { getTT } from './tt-services';
+import { getTT } from './utils.ts';
 
 const CACHE_DIR = join(homedir(), '.cache', 'tt-cli');
 const NOTES_CACHE_FILE = join(CACHE_DIR, 'notes.json');

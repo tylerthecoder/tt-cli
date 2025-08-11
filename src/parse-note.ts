@@ -1,43 +1,26 @@
 import { join } from 'path';
 import type { NoteType, Note } from '@tt-services';
 import * as yaml from 'js-yaml';
-import { readdir } from 'fs/promises';
-import { readFile } from 'fs/promises';
+import { readdir, readFile, writeFile, stat, exists } from 'fs/promises';
 import { getNoteById } from './notes.ts';
-import { createInterface } from 'readline/promises';
-import { writeFile } from 'fs/promises';
 import type { CreatableNote } from '@tt-services/src/services/notes';
-import { stat } from 'fs/promises';
-import { existsSync } from 'fs';
-import { getTT } from './tt-services.ts';
+import { confirm, getTT, logger as baseLogger } from './utils.ts';
+import { NOTES_DIR } from './config.ts';
 
-// Get the directory of the current file
-const NOTES_DIR = "/home/tylord/dev/tt-notes/notes"
+const logger = baseLogger.child({
+    module: "parse-note",
+    filename: import.meta.url,
+});
 
-export { NOTES_DIR }; // Export the notes directory
-
-// --- ANSI Color Codes (Copied for logging within the util) ---
-// It might be better to pass a logger instance, but this is simpler for now.
-const colors = {
-    reset: "\x1b[0m",
-    green: "\x1b[32m",
-    red: "\x1b[31m",
-    yellow: "\x1b[33m",
-    cyan: "\x1b[36m",
-    magenta: "\x1b[35m",
-    blue: "\x1b[34m",
-    dim: "\x1b[2m",
-};
-
-async function confirm(prompt: string) {
-    const rl = createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-    const answer = await rl.question(prompt);
-    rl.close();
-    return answer.toLowerCase() === 'y';
+const requireNotesDir = (dir?: string) => {
+    const notesDir = dir ?? NOTES_DIR;
+    if (!notesDir) {
+        logger.error({ dirCandidate: dir }, "Notes directory not set");
+        process.exit(1);
+    }
+    return notesDir;
 }
+
 
 /**
  * Generates a filesystem-safe filename for a note, handling potential collisions.
@@ -63,13 +46,7 @@ export function generateSafeFilename(
     let counter = 1;
     // Check for collisions (case-insensitive)
     while (existingFilenamesLowercase.has(finalFileName.toLowerCase())) {
-        // Log collision warning using the imported colors? Or keep utils purely functional?
-        // For now, let the caller handle logging if needed.
-        console.warn(
-            colors.yellow, // Assuming colors are accessible here if needed, otherwise remove logging
-            `  - Filename collision detected internally for base: "${baseFileName}". Trying alternative...`,
-            colors.reset,
-        );
+        logger.warn({ baseFileName, currentName: finalFileName }, 'Filename collision detected; trying alternative');
         finalFileName = `${safeTitle || noteId}_${counter++}.md`;
     }
     return finalFileName;
@@ -158,7 +135,7 @@ export async function extractNoteFromMarkdownFile(file: NoteFile): Promise<NoteT
     const frontmatter = await extractFrontmatterFromMarkdownFile(file);
 
     if (!frontmatter) {
-        console.warn(colors.yellow, 'Note file has no frontmatter, skipping', colors.reset);
+        logger.warn({ path: file.path }, 'Note file has no frontmatter, skipping');
         return null;
     }
 
@@ -166,25 +143,25 @@ export async function extractNoteFromMarkdownFile(file: NoteFile): Promise<NoteT
 
     const id = frontmatter?.id ?? null;
     if (!id) {
-        console.warn(colors.yellow, 'Note file has no id, skipping', colors.reset);
+        logger.warn({ path: file.path }, 'Note file has no id, skipping');
         return null;
     }
 
     const createdAt = frontmatter?.createdAt ?? null;
     if (!createdAt) {
-        console.warn(colors.yellow, 'Note file has no createdAt, skipping', colors.reset);
+        logger.warn({ path: file.path, id }, 'Note file has no createdAt, skipping');
         return null;
     }
 
     const updatedAt = frontmatter?.updatedAt ?? null;
     if (!updatedAt) {
-        console.warn(colors.yellow, 'Note file has no updatedAt, skipping', colors.reset);
+        logger.warn({ path: file.path, id }, 'Note file has no updatedAt, skipping');
         return null;
     }
 
     const title = file.path.split('/').pop()?.split('.').shift() ?? null;
     if (!title) {
-        console.warn(colors.yellow, 'Note file has no title, skipping', colors.reset);
+        logger.warn({ path: file.path, id }, 'Note file has no title, skipping');
         return null;
     }
 
@@ -202,28 +179,28 @@ export async function tryFormatMarkdownFiles(file: NoteFile, should_confirm: boo
     const frontmatter = await extractFrontmatterFromMarkdownFile(file);
 
     if (!frontmatter) {
-        console.warn(colors.yellow, 'Note file has no frontmatter, skipping', colors.reset);
+        logger.warn({ path: file.path }, 'Note file has no frontmatter, skipping');
         return null;
     }
 
     const id = frontmatter?.id ?? null;
     if (!id) {
-        console.warn(colors.yellow, 'Note file has no id, skipping', colors.reset);
+        logger.warn({ path: file.path }, 'Note file has no id, skipping');
         return null;
     }
 
     const note = await getNoteById(id);
 
     if (!note) {
-        console.warn(colors.yellow, 'Note file has no note, skipping', colors.reset);
+        logger.warn({ path: file.path, id }, 'Note file has no note, skipping');
         return null;
     }
 
     if (should_confirm) {
-        const confirmed = await confirm(`Format note ${id}? (y/n)`);
+        const confirmed = await confirm(logger, `Format note ${id}? (y/n)`);
 
         if (!confirmed) {
-            console.log(colors.yellow, 'Skipping note', colors.reset);
+            logger.info({ path: file.path, id }, 'Skipping note');
             return null;
         }
     }
@@ -245,13 +222,13 @@ export async function extractCreatableNote(file: NoteFile): Promise<CreatableNot
 
     const title = typeof frontmatter?.title === 'string' ? frontmatter.title : file.path.split('/').pop()?.split('.').shift();
     if (!title) {
-        console.warn(colors.yellow, 'Note file has no title, skipping', colors.reset);
+        logger.warn({ path: file.path }, 'Note file has no title, skipping');
         return null;
     }
 
     const date = typeof frontmatter?.date === 'string' ? frontmatter.date : (await stat(file.path)).mtime.toISOString();
     if (!date) {
-        console.warn(colors.yellow, 'Note file has no date, skipping', colors.reset);
+        logger.warn({ path: file.path, title }, 'Note file has no date, skipping');
         return null;
     }
 
@@ -270,31 +247,21 @@ export async function extractCreatableNote(file: NoteFile): Promise<CreatableNot
 
 
 
-export async function getNoteFilePaths(dir: string = NOTES_DIR) {
+export async function getNoteFilePaths(dir?: string) {
+    dir = requireNotesDir(dir);
     let files: string[];
     try {
         files = await readdir(dir);
     } catch (dirError) {
-        console.error(
-            colors.red,
-            `Error reading notes directory ${dir}:`,
-            dirError,
-            colors.reset,
-        );
+        logger.error({ error: dirError, dir }, 'Error reading notes directory');
         throw dirError;
     }
 
     return files.filter((f) => f.toLowerCase().endsWith(".md")).map((f) => join(dir, f));
 }
 
-
-/**
- * Scans the notes directory for markdown files, parses them,
- * and returns an array of results.
- * @param notesDir - Optional directory override. If not provided, uses the default NOTES_DIR.
- * @returns A promise that resolves with an array of LocalNoteScanResult.
- */
-export async function scanNotesDirectory(notesDir: string = NOTES_DIR) {
+export async function scanNotesDirectory(notesDir?: string) {
+    notesDir = requireNotesDir(notesDir);
     const files = await getNoteFilePaths(notesDir);
 
     const notes: { note: NoteType, path: string }[] = [];
@@ -313,7 +280,8 @@ export async function scanNotesDirectory(notesDir: string = NOTES_DIR) {
     return notes;
 }
 
-export async function formatAllNotes(dir: string = NOTES_DIR, should_confirm: boolean = true) {
+export async function formatAllNotes(dir?: string, should_confirm: boolean = true) {
+    dir = requireNotesDir(dir);
     const files = await getNoteFilePaths(dir);
 
     for (const filePath of files) {
@@ -322,7 +290,8 @@ export async function formatAllNotes(dir: string = NOTES_DIR, should_confirm: bo
     }
 }
 
-export async function extractCreatableNotes(dir: string = NOTES_DIR) {
+export async function extractCreatableNotes(dir?: string) {
+    dir = requireNotesDir(dir);
     const files = await getNoteFilePaths(dir);
 
     const creatableNotes: { path: string, note: CreatableNote }[] = [];
@@ -337,7 +306,8 @@ export async function extractCreatableNotes(dir: string = NOTES_DIR) {
     return creatableNotes;
 }
 
-export async function findRemoteNotesToDownload(dir: string = NOTES_DIR): Promise<NoteType[]> {
+export async function findRemoteNotesToDownload(dir?: string): Promise<NoteType[]> {
+    dir = requireNotesDir(dir);
     const notes = await scanNotesDirectory(dir);
 
     const tt = await getTT();
@@ -363,7 +333,8 @@ type Conflict = {
     conflictType: Array<string>;
 }
 
-export async function findConflicts(dir: string = NOTES_DIR) {
+export async function findConflicts(dir?: string) {
+    dir = requireNotesDir(dir);
     const notes = await scanNotesDirectory(dir);
     const tt = await getTT();
     const remoteNotes = await tt.notes.getAllNotes();
@@ -410,89 +381,101 @@ export async function findConflicts(dir: string = NOTES_DIR) {
 }
 
 
-export async function syncNotes(dir: string = NOTES_DIR, should_confirm: boolean = true) {
+export async function syncNotes(dir?: string, should_confirm: boolean = true) {
+    dir = requireNotesDir(dir);
     const tt = await getTT();
+
+    // ========
+    // Find local notes that don't exist on the server
+    // ========
     const creatableNotes = await extractCreatableNotes(dir);
     if (creatableNotes.length > 0) {
-        console.log(colors.green, `Found ${creatableNotes.length} notes on local to push to server. \n - ${creatableNotes.map(({ note }) => note.title).join("\n - ")}`, colors.reset);
-        const confirmCreate = await confirm("Create notes? (y/n)");
+        logger.info({ count: creatableNotes.length, titles: creatableNotes.map(({ note }) => note.title) }, 'Found notes on local to push to server');
+        const confirmCreate = await confirm(logger, "Create notes? (y/n)");
         if (confirmCreate) {
             for (const { path, note } of creatableNotes) {
-                console.log(colors.green, `Note: ${note.title}`, colors.reset);
+                logger.info({ title: note.title, path }, 'Creating note');
 
                 if (should_confirm) {
                     const allButContent = Object.fromEntries(Object.entries(note).filter(([key]) => key !== 'content'));
-                    const confirmed = await confirm(`Create note ${note.title}? (y/n)\n${JSON.stringify(allButContent, null, 2)}`);
+                    const confirmed = await confirm(logger, `Create note ${note.title}? (y/n)\n${JSON.stringify(allButContent, null, 2)}`);
 
                     if (!confirmed) {
-                        console.log(colors.yellow, `Skipping note ${note.title}`, colors.reset);
+                        logger.info({ title: note.title, path }, 'Skipping note creation');
                         continue;
                     }
                 }
 
                 const createdNote = await tt.notes.createNote(note);
 
-                console.log(colors.green, `Created note: ${createdNote.title}`, colors.reset);
+                logger.info({ title: createdNote.title, id: createdNote.id }, 'Created note');
 
                 const newContent = formatNoteAsMarkdown(createdNote);
                 await writeFile(path, newContent);
             }
         }
     } else {
-        console.log(colors.yellow, "No notes to create", colors.reset);
+        logger.info("No notes to create");
     }
 
-    // Now download notes from remote
+    // ========
+    // Find remote notes that don't exist locally
+    // ========
     const notesToDownload = await findRemoteNotesToDownload(dir);
 
     if (notesToDownload.length > 0) {
-        console.log(colors.green, "Found notes to download from server: ", notesToDownload.length, "\n", notesToDownload.map((note) => note.title).join("\n"), colors.reset);
+        logger.info({ count: notesToDownload.length, titles: notesToDownload.map((note) => note.title) }, 'Found notes to download from server');
 
-        const confirmDownload = await confirm("Download notes from server? (y/n)");
+        const confirmDownload = await confirm(logger, "Download notes from server? (y/n)");
 
         if (confirmDownload) {
             for (const note of notesToDownload) {
                 const newContent = formatNoteAsMarkdown(note);
                 const filePath = join(dir, `${note.title}.md`);
-                if (existsSync(filePath)) {
-                    console.log(colors.yellow, `Note ${note.title} already exists, skipping`, colors.reset);
+
+                if (await exists(filePath)) {
+                    logger.warn({ title: note.title, filePath }, 'Note already exists locally, skipping');
                     continue;
                 }
                 await writeFile(filePath, newContent);
-                console.log(colors.green, `Downloaded note: ${note.title}`, colors.reset);
+                logger.info({ title: note.title, filePath }, 'Downloaded note');
             }
         }
 
     } else {
-        console.log(colors.yellow, "No notes to download", colors.reset);
+        logger.info("No notes to download");
     }
 
+    // ========
+    // Find conflicts between local and remote notes
+    // ========
     const conflicts = await findConflicts(dir);
     if (conflicts.length > 0) {
-        console.log(colors.yellow, "No conflicts found", colors.reset);
+        logger.warn({ count: conflicts.length }, 'Conflicts found');
         for (const conflict of conflicts) {
             const remoteContent = formatNoteAsMarkdown(conflict.remote);
             await writeFile(conflict.local.path, remoteContent);
-            console.log(colors.green, `Note: ${conflict.remote.title} - Conflict Types: (${conflict.conflictType.join(", ")})`, colors.reset);
+            logger.info({ title: conflict.remote.title, conflictTypes: conflict.conflictType, path: conflict.local.path }, 'Wrote remote content to local file to resolve conflict');
         }
-        const doneEditingConfirm = await confirm("Press yes when you are done editing and ready to push changes to server (y/n)")
+        const doneEditingConfirm = await confirm(logger, "Press yes when you are done editing and ready to push changes to server (y/n)")
 
         if (doneEditingConfirm) {
             // find conflicts again, for each conflict, ask the user if they want to push the changes to the server
             const conflicts = await findConflicts(dir);
             for (const conflict of conflicts) {
-                console.log(colors.green, `Note: ${conflict.remote.title}`, colors.reset);
-                console.log(colors.green, `Conflicts: ${conflict.conflictType.join(", ")}`, colors.reset);
-                const confirmed = await confirm(`Push changes to server for note ${conflict.remote.title}? (y/n)`);
+                logger.info({ title: conflict.remote.title }, 'Conflict remains after edit');
+                logger.info({ conflictTypes: conflict.conflictType }, 'Conflict details');
+                const confirmed = await confirm(logger, `Push changes to server for note ${conflict.remote.title}? (y/n)`);
                 if (confirmed) {
                     await tt.notes.updateNote(conflict.remote.id, conflict.local.note);
                 }
             }
         }
     } else {
-        console.log(colors.yellow, "No conflicts found", colors.reset);
+        logger.info("No conflicts found");
     }
 
-    console.log(colors.green, "Sync complete 🤸", colors.reset);
+    logger.info("Sync complete 🤸");
 
+    await tt.disconnect();
 }

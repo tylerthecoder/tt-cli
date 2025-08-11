@@ -1,6 +1,6 @@
 import { run, RunResult, RunState, RunToolApprovalItem } from '@openai/agents';
 import inquirer from 'inquirer';
-import { getTT } from './tt-services';
+import { getTT } from './utils.ts';
 import { makeAgent } from '@tt-services/src/agent/agent';
 
 
