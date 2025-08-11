@@ -20,6 +20,12 @@ const requireNotesDir = (dir?: string) => {
     return notesDir;
 }
 
+export const getPrintableNoteContent = (note: NoteType | CreatableNote) => {
+    return Object.fromEntries(Object.entries(note).filter(([key]) => key !== 'content' && key !== "googleDocContent"));
+}
+
+
+
 export async function generateNoteFilename(noteMetadata: NoteMetadata, notesDir?: string): Promise<string> {
     let safeTitle = noteMetadata.title
         .toLowerCase()
@@ -45,7 +51,7 @@ export function formatNoteAsMarkdown(note: NoteType): string {
         delete note._id;
     }
 
-    const allButContent = Object.fromEntries(Object.entries(note).filter(([key]) => key !== 'content' && key !== "googleDocContent"));
+    const allButContent = getPrintableNoteContent(note);
 
     const fmString = yaml.dump(allButContent, { skipInvalid: true });
 
@@ -57,14 +63,28 @@ export function formatNoteAsMarkdown(note: NoteType): string {
     ].join('\n');
 }
 
-export async function saveNoteToFs(note: NoteType, opts: { dir?: string, confirmOverwrite?: boolean, shouldLog?: boolean } = { dir: undefined, confirmOverwrite: false, shouldLog: true }) {
+export async function saveNoteToFs(note: NoteType, opts: { dir?: string, path?: string, confirmOverwrite?: boolean, shouldLog?: boolean } = { dir: undefined, confirmOverwrite: false, shouldLog: true }) {
     const filename = await generateNoteFilename(note);
     const content = formatNoteAsMarkdown(note);
     const notesDir = requireNotesDir(opts.dir);
-    const filePath = path.join(notesDir, filename);
+
+    const allLocalNotes = await scanNotesDirectory(notesDir);
+    const existingNote = allLocalNotes.find(({ note: localNote }) => localNote.id === note.id);
+
+    if (existingNote) {
+        logger.info({ noteToSave: note, existingNote }, 'Note already exists locally');
+    }
+
+    if (opts.path && existingNote) {
+        logger.error({ noteToSave: note, existingNote }, 'Path provided but note already exists locally');
+        throw new Error('Path provided but note already exists locally');
+    }
+
+    const filePath = opts.path ?? (existingNote ? existingNote.path : path.join(notesDir, filename));
+
     const confirmOverwrite = opts.confirmOverwrite ?? false;
     if (confirmOverwrite && await exists(filePath)) {
-        const confirmed = await confirm(logger, `Note already exists locally at ${filename}, overwrite? (y/n)`);
+        const confirmed = await confirm(logger, `Note already exists locally at ${filePath}, overwrite?`);
         if (!confirmed) {
             logger.info({ title: note.title, path: filePath }, 'Skipping note');
             return;
@@ -230,6 +250,7 @@ export async function getNoteFilePaths(dir?: string) {
 
 export async function scanNotesDirectory(notesDir?: string) {
     notesDir = requireNotesDir(notesDir);
+
     const files = await getNoteFilePaths(notesDir);
 
     const notes: { note: NoteType, path: string }[] = [];
@@ -366,14 +387,14 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
     const creatableNotes = await extractCreatableNotes(dir);
     if (creatableNotes.length > 0) {
         logger.info({ count: creatableNotes.length, titles: creatableNotes.map(({ note }) => note.title) }, 'Found notes on local to push to server');
-        const confirmCreate = await confirm(logger, "Create notes? (y/n)");
+        const confirmCreate = await confirm(logger, "Create notes");
         if (confirmCreate) {
             for (const { path, note } of creatableNotes) {
-                logger.info({ title: note.title, path }, 'Creating note');
+                const printableNote = getPrintableNoteContent(note);
+                logger.info({ note: printableNote, path }, 'Will create note');
 
                 if (should_confirm) {
-                    const allButContent = Object.fromEntries(Object.entries(note).filter(([key]) => key !== 'content'));
-                    const confirmed = await confirm(logger, `Create note ${note.title}? (y/n)\n${JSON.stringify(allButContent, null, 2)}`);
+                    const confirmed = await confirm(logger, `Create note ${note.title}`);
 
                     if (!confirmed) {
                         logger.info({ title: note.title, path }, 'Skipping note creation');
@@ -382,7 +403,7 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
                 }
 
                 const createdNote = await tt.notes.createNote(note);
-                await saveNoteToFs(createdNote, { dir, confirmOverwrite: false, shouldLog: true });
+                await saveNoteToFs(createdNote, { dir, path: path, confirmOverwrite: false, shouldLog: true });
             }
         }
     } else {
@@ -397,7 +418,7 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
     if (notesToDownload.length > 0) {
         logger.info({ count: notesToDownload.length, titles: notesToDownload.map((note) => note.title) }, 'Found notes to download from server');
 
-        const confirmDownload = await confirm(logger, "Download notes from server? (y/n)");
+        const confirmDownload = await confirm(logger, "Download notes from server?");
 
         if (confirmDownload) {
             for (const note of notesToDownload) {

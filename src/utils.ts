@@ -1,5 +1,4 @@
 import { TylersThings } from '@tt-services/src';
-import { createInterface } from 'readline/promises';
 import pino, { type Logger } from 'pino';
 import inquirer from 'inquirer';
 
@@ -14,18 +13,17 @@ export const colors = {
     dim: "\x1b[2m",
 };
 
-export async function confirm(logger: Logger, prompt: string) {
+export async function confirm(logger2: Logger, prompt: string) {
     await new Promise(resolve => logger.flush(resolve));
-    console.log("\n")
 
-
-    const rl = createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-    const answer = await rl.question(prompt);
-    rl.close();
-    return answer.toLowerCase() === 'y';
+    const confirm = await inquirer.prompt([
+        {
+            type: 'confirm',
+            name: 'confirm',
+            message: prompt
+        }
+    ])
+    return confirm.confirm;
 }
 
 export const pickOptionCli = async <T extends string>(logger: Logger, prompt: string, options: T[]): Promise<T> => {
@@ -41,15 +39,18 @@ export const pickOptionCli = async <T extends string>(logger: Logger, prompt: st
     return answer.option;
 }
 
-export const logger = pino({
-    name: "tt-cli",
-    transport: {
-        target: 'pino-pretty',
-        options: {
-            ignore: 'module,filename',
-        }
+const transport = pino.transport({
+    target: 'pino-pretty',
+    options: {
+        ignore: 'module,filename',
     },
-});
+    // @ts-ignore
+    sync: true
+})
+
+
+export const logger = pino(transport);
+
 
 export const getTT = async () => {
     const tt = await TylersThings.make({ logger });
