@@ -7,7 +7,6 @@ import { getNotes as getNotesCached, filterNotes, displayNotes, getNoteById, ope
 import { syncNotes } from './parse-note.ts';
 import { runAgent } from './agent.ts';
 
-// Try loading from .config/tt-cli/.env first, then fallback to local .env
 const configPath = join(homedir(), '.config', 'tt-cli', '.env');
 const result = config({ path: configPath });
 

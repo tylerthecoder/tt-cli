@@ -3,7 +3,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { exec } from 'child_process';
+import { $ } from 'bun';
 import { getTT } from './tt-services';
 
 const CACHE_DIR = join(homedir(), '.cache', 'tt-cli');
@@ -48,6 +48,12 @@ export async function getNotes(): Promise<NoteType[]> {
     return notes;
 }
 
+export async function getNotesAndUntrackedGoogleDocs() {
+    const tt = await getTT();
+    const notesAndUntrackedGoogleDocs = await tt.googleNotes.getAllNotesAndUntrackedGoogleDocs("tylertracy1999@gmail.com");
+    return notesAndUntrackedGoogleDocs;
+}
+
 export function filterNotes(notes: NoteType[], options: { published?: boolean; tag?: string; date?: string }) {
     let filtered = [...notes];
     if (options.published) filtered = filtered.filter(n => n.published);
@@ -75,6 +81,10 @@ export async function getNoteById(id: string): Promise<Note | null> {
     return tt.notes.getNoteById(id);
 }
 
-export function openNoteLink(id: string) {
-    exec(`xdg-open https://tylertracy.com/notes/${id}`);
+export async function openNoteLink(id: string) {
+    await $`xdg-open https://tylertracy.com/notes/${id}`.quiet();
+}
+
+export async function openGoogleDocLink(id: string) {
+    await $`xdg-open https://docs.google.com/document/d/${id}`.quiet();
 }
