@@ -452,7 +452,7 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
                     await saveNoteToFs(createdNote, { dir, confirmOverwrite: false, shouldLog: true });
                     continue;
                 case 'delete':
-                    const confirmed = await confirm(logger, `Delete local file for "${note.title}" (missing on server)? (y/n)`);
+                    const confirmed = await confirm(logger, `Delete local file for "${note.title}"`);
                     if (confirmed) {
                         await unlink(path);
                         logger.info({ title: note.title, path }, 'Deleted local file for note missing on server');
@@ -480,7 +480,7 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
             await writeFile(conflict.local.path, remoteContent);
             logger.info({ title: conflict.remote.title, conflictTypes: conflict.conflictType, path: conflict.local.path }, 'Wrote remote content to local file to resolve conflict');
         }
-        const doneEditingConfirm = await confirm(logger, "Press yes when you are done editing and ready to push changes to server (y/n)")
+        const doneEditingConfirm = await confirm(logger, "Press yes when you are done editing and ready to push changes to server")
 
         if (doneEditingConfirm) {
             // find conflicts again, for each conflict, ask the user if they want to push the changes to the server
@@ -488,7 +488,7 @@ export async function syncNotes(dir?: string, should_confirm: boolean = true) {
             for (const conflict of conflicts) {
                 logger.info({ title: conflict.remote.title }, 'Conflict remains after edit');
                 logger.info({ conflictTypes: conflict.conflictType }, 'Conflict details');
-                const confirmed = await confirm(logger, `Push changes to server for note ${conflict.remote.title}? (y/n)`);
+                const confirmed = await confirm(logger, `Push changes to server for note ${conflict.remote.title}`);
                 if (confirmed) {
                     await tt.notes.updateNote(conflict.remote.id, conflict.local.note);
                 }

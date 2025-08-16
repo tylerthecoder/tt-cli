@@ -35,7 +35,8 @@ const renderToolCall = async (toolCall: RunToolApprovalItem) => {
 
 
 export async function runAgent() {
-    const agent = await makeAgent();
+    const tt = await getTT();
+    const agent = await makeAgent(tt);
     const prompt = await inquirer.prompt([
         {
             type: 'input',
