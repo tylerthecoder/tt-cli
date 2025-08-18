@@ -2,7 +2,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { render, Box, Text, useApp, useInput } from 'ink';
 import { spawn } from 'child_process';
-import { getNotesAndUntrackedGoogleDocs, openGoogleDocLink, openNoteLink } from './notes.ts';
+import {
+    getNotesAndUntrackedGoogleDocs,
+    openGoogleDocLink,
+    openNoteLink,
+} from './notes.ts';
 import { getTT } from './utils.ts';
 
 const enterAltScreen = () => {
@@ -10,14 +14,14 @@ const enterAltScreen = () => {
         process.stdout.write('\x1b[?1049h');
         process.stdout.write('\x1b[?25l');
         process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-    } catch { }
+    } catch {}
 };
 
 const leaveAltScreen = () => {
     try {
         process.stdout.write('\x1b[?25h');
         process.stdout.write('\x1b[?1049l');
-    } catch { }
+    } catch {}
 };
 
 function truncate(str: string, maxLen: number) {
@@ -27,14 +31,19 @@ function truncate(str: string, maxLen: number) {
 
 async function viewWithLess(content: string) {
     try {
-        if ((process.stdin as any).isTTY && typeof (process.stdin as any).setRawMode === 'function') {
+        if (
+            (process.stdin as any).isTTY &&
+            typeof (process.stdin as any).setRawMode === 'function'
+        ) {
             (process.stdin as any).setRawMode(false);
         }
         process.stdout.write('\x1b[?25h'); // show cursor for less
-    } catch { }
+    } catch {}
 
-    await new Promise<void>((resolve) => {
-        const less = spawn('less', ['-R'], { stdio: ['pipe', 'inherit', 'inherit'] });
+    await new Promise<void>(resolve => {
+        const less = spawn('less', ['-R'], {
+            stdio: ['pipe', 'inherit', 'inherit'],
+        });
         less.stdin?.write(content);
         less.stdin?.end();
         less.on('exit', () => resolve());
@@ -42,12 +51,15 @@ async function viewWithLess(content: string) {
     });
 
     try {
-        if ((process.stdin as any).isTTY && typeof (process.stdin as any).setRawMode === 'function') {
+        if (
+            (process.stdin as any).isTTY &&
+            typeof (process.stdin as any).setRawMode === 'function'
+        ) {
             (process.stdin as any).setRawMode(true);
         }
         process.stdout.write('\x1b[?25l'); // hide cursor again
         process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); // clear for redraw
-    } catch { }
+    } catch {}
 }
 
 type Mode = 'list' | 'search' | 'tagSelect';
@@ -57,7 +69,7 @@ type DisplayItem = {
     tags: string[];
     isGoogleDoc: boolean;
     id: string;
-}
+};
 
 function useNotesData() {
     const [notes, setNotes] = useState<DisplayItem[] | null>(null);
@@ -65,7 +77,10 @@ function useNotesData() {
     const [error, setError] = useState<string | null>(null);
 
     async function fetchNotes(ignoreCache: boolean = false) {
-        const { notes, googleDocs } = await getNotesAndUntrackedGoogleDocs({ ignoreTimeout: true, ignoreCache });
+        const { notes, googleDocs } = await getNotesAndUntrackedGoogleDocs({
+            ignoreTimeout: true,
+            ignoreCache,
+        });
         const tagSet = new Set<string>();
         for (const n of notes) (n.tags || []).forEach(t => tagSet.add(t));
         const displayItems: DisplayItem[] = [];
@@ -79,16 +94,15 @@ function useNotesData() {
         }
         for (const gd of googleDocs) {
             displayItems.push({
-                title: gd.name || "",
+                title: gd.name || '',
                 tags: [],
                 isGoogleDoc: true,
-                id: gd.id || "",
+                id: gd.id || '',
             });
         }
         setNotes(displayItems);
         setTags(Array.from(tagSet).sort());
     }
-
 
     useEffect(() => {
         fetchNotes();
@@ -118,7 +132,8 @@ function NotesTui() {
     }, [notes, query, selectedTag]);
 
     useEffect(() => {
-        if (selectedIndex >= filtered.length) setSelectedIndex(Math.max(0, filtered.length - 1));
+        if (selectedIndex >= filtered.length)
+            setSelectedIndex(Math.max(0, filtered.length - 1));
     }, [filtered.length]);
 
     useEffect(() => {
@@ -128,43 +143,76 @@ function NotesTui() {
 
     useInput(async (input, key) => {
         // Global refresh shortcut: r or Ctrl+L (disabled while typing in search mode)
-        if (mode !== 'search' && (input === 'r' || (key.ctrl && input === 'l'))) {
-            try { process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); } catch { }
+        if (
+            mode !== 'search' &&
+            (input === 'r' || (key.ctrl && input === 'l'))
+        ) {
+            try {
+                process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+            } catch {}
             reload();
             return;
         }
 
         if (mode === 'search') {
-            if (key.return) { setMode('list'); return; }
-            if (key.escape) { setMode('list'); return; }
-            if (key.backspace || key.delete) { setQuery(q => q.slice(0, -1)); return; }
-            if (key.ctrl && input === 'u') { setQuery(''); return; }
-            if (input) { setQuery(q => q + input); }
+            if (key.return) {
+                setMode('list');
+                return;
+            }
+            if (key.escape) {
+                setMode('list');
+                return;
+            }
+            if (key.backspace || key.delete) {
+                setQuery(q => q.slice(0, -1));
+                return;
+            }
+            if (key.ctrl && input === 'u') {
+                setQuery('');
+                return;
+            }
+            if (input) {
+                setQuery(q => q + input);
+            }
             return;
         }
 
         if (mode === 'tagSelect') {
-            if (key.upArrow || input === 'k') setTagIndex(i => Math.max(0, i - 1));
-            else if (key.downArrow || input === 'j') setTagIndex(i => Math.min(allTags.length - 1, i + 1));
+            if (key.upArrow || input === 'k')
+                setTagIndex(i => Math.max(0, i - 1));
+            else if (key.downArrow || input === 'j')
+                setTagIndex(i => Math.min(allTags.length - 1, i + 1));
             else if (input === 'b') setTagIndex(i => Math.max(0, i - 10));
-            else if (input === 'f') setTagIndex(i => Math.min(allTags.length - 1, i + 10));
+            else if (input === 'f')
+                setTagIndex(i => Math.min(allTags.length - 1, i + 10));
             else if (input === 'g') setTagIndex(0);
-            else if (input === 'G') setTagIndex(Math.max(0, allTags.length - 1));
+            else if (input === 'G')
+                setTagIndex(Math.max(0, allTags.length - 1));
             else if (key.escape) setMode('list');
-            else if (key.return) { const t = allTags[tagIndex]; setSelectedTag(t === '(all)' ? null : t); setMode('list'); }
+            else if (key.return) {
+                const t = allTags[tagIndex];
+                setSelectedTag(t === '(all)' ? null : t);
+                setMode('list');
+            }
             return;
         }
 
         // list mode
-        if (key.upArrow || input === 'k') setSelectedIndex(i => Math.max(0, i - 1));
-        else if (key.downArrow || input === 'j') setSelectedIndex(i => Math.min(filtered.length - 1, i + 1));
+        if (key.upArrow || input === 'k')
+            setSelectedIndex(i => Math.max(0, i - 1));
+        else if (key.downArrow || input === 'j')
+            setSelectedIndex(i => Math.min(filtered.length - 1, i + 1));
         else if (input === 'b') setSelectedIndex(i => Math.max(0, i - 10));
-        else if (input === 'f') setSelectedIndex(i => Math.min(filtered.length - 1, i + 10));
+        else if (input === 'f')
+            setSelectedIndex(i => Math.min(filtered.length - 1, i + 10));
         else if (input === 'g') setSelectedIndex(0);
-        else if (input === 'G') setSelectedIndex(Math.max(0, filtered.length - 1));
+        else if (input === 'G')
+            setSelectedIndex(Math.max(0, filtered.length - 1));
         else if (input === '/') setMode('search');
-        else if (input === 't') { setMode('tagSelect'); setTagIndex(0); }
-        else if (input === 'o') {
+        else if (input === 't') {
+            setMode('tagSelect');
+            setTagIndex(0);
+        } else if (input === 'o') {
             const target = filtered[selectedIndex];
             if (!target) return;
             if (target.isGoogleDoc) {
@@ -173,8 +221,7 @@ function NotesTui() {
                 await openNoteLink(target.id);
             }
             process.exit(0);
-        }
-        else if (input === 'v') {
+        } else if (input === 'v') {
             const target = filtered[selectedIndex];
             if (!target) return;
             (async () => {
@@ -191,25 +238,27 @@ function NotesTui() {
                 }
             })();
             return;
-        }
-        else if (input === 'c' && key.ctrl) exit();
+        } else if (input === 'c' && key.ctrl) exit();
         else if (input === 'q') exit();
         // Enter no longer prints & exits
     });
 
-    if (error) return (
-        <Box flexDirection="column">
-            <Text color="red">Error: {error}</Text>
-        </Box>
-    );
+    if (error)
+        return (
+            <Box flexDirection="column">
+                <Text color="red">Error: {error}</Text>
+            </Box>
+        );
 
-    if (!notes) return (
-        <Box flexDirection="column">
-            <Text>Loading notes…</Text>
-        </Box>
-    );
+    if (!notes)
+        return (
+            <Box flexDirection="column">
+                <Text>Loading notes…</Text>
+            </Box>
+        );
 
-    let legend = '[j/k] up/down  [f/b] jump 10  [g/G] start/end  [/] search  [t] tags  [o] open in browser  [v] view (less)  [r] refresh  [q] quit  [Ctrl+C] quit';
+    let legend =
+        '[j/k] up/down  [f/b] jump 10  [g/G] start/end  [/] search  [t] tags  [o] open in browser  [v] view (less)  [r] refresh  [q] quit  [Ctrl+C] quit';
 
     if (mode === 'search') {
         legend += '  [Esc] cancel';
@@ -219,25 +268,37 @@ function NotesTui() {
         legend += '  [Esc] cancel';
     }
 
-
-    const termRows = Math.max(10, (process.stdout.rows || 24));
-    const termCols = Math.max(40, (process.stdout.columns || 80));
+    const termRows = Math.max(10, process.stdout.rows || 24);
+    const termCols = Math.max(40, process.stdout.columns || 80);
 
     // Compute list window size to avoid overflowing header/footer
     const headerRows = 1; // title line
     const marginAboveList = 1; // marginTop before list/tagSelect box
     const legendRows = 2; // margin + legend line
     const searchHintRows = mode === 'search' ? 1 : 0;
-    const baseOverhead = headerRows + marginAboveList + legendRows + searchHintRows;
+    const baseOverhead =
+        headerRows + marginAboveList + legendRows + searchHintRows;
     const listWindowSize = Math.max(5, Math.min(40, termRows - baseOverhead));
 
     // Tag window sizing based on terminal rows too
     const tagWindowSize = Math.max(5, Math.min(20, termRows - 8));
-    const tagStart = Math.max(0, Math.min(tagIndex - Math.floor(tagWindowSize / 2), Math.max(0, allTags.length - tagWindowSize)));
+    const tagStart = Math.max(
+        0,
+        Math.min(
+            tagIndex - Math.floor(tagWindowSize / 2),
+            Math.max(0, allTags.length - tagWindowSize)
+        )
+    );
     const tagEnd = Math.min(allTags.length, tagStart + tagWindowSize);
 
     // List window calculation
-    const listStart = Math.max(0, Math.min(selectedIndex - Math.floor(listWindowSize / 2), Math.max(0, filtered.length - listWindowSize)));
+    const listStart = Math.max(
+        0,
+        Math.min(
+            selectedIndex - Math.floor(listWindowSize / 2),
+            Math.max(0, filtered.length - listWindowSize)
+        )
+    );
     const listEnd = Math.min(filtered.length, listStart + listWindowSize);
 
     const maxTitleWidth = Math.max(20, Math.min(72, termCols - 8));
@@ -246,18 +307,33 @@ function NotesTui() {
         <Box flexDirection="column" height={termRows}>
             <Box flexShrink={0} padding={1} borderBottom>
                 <Text color="cyan">Notes</Text>
-                <Text>  •  </Text>
+                <Text> • </Text>
                 <Text>Query: </Text>
-                <Text color={mode === 'search' ? 'yellow' : undefined}>{query || '(blank)'}</Text>
-                <Text>  •  Tag: </Text>
-                <Text color={mode === 'tagSelect' ? 'yellow' : undefined}>{selectedTag || '(all)'}</Text>
-                <Text>  •  Showing {filtered.length} / {notes.length}</Text>
+                <Text color={mode === 'search' ? 'yellow' : undefined}>
+                    {query || '(blank)'}
+                </Text>
+                <Text> • Tag: </Text>
+                <Text color={mode === 'tagSelect' ? 'yellow' : undefined}>
+                    {selectedTag || '(all)'}
+                </Text>
+                <Text>
+                    {' '}
+                    • Showing {filtered.length} / {notes.length}
+                </Text>
             </Box>
 
             {mode === 'tagSelect' ? (
-                <Box flexDirection="column" marginTop={1} borderStyle="round" paddingX={1} flexGrow={1}>
+                <Box
+                    flexDirection="column"
+                    marginTop={1}
+                    borderStyle="round"
+                    paddingX={1}
+                    flexGrow={1}
+                >
                     <Text>
-                        Select Tag (Enter to choose, Esc to cancel)  •  {tagStart + 1}-{tagEnd} of {allTags.length}  •  Keys: j/k, f/b, g/G
+                        Select Tag (Enter to choose, Esc to cancel) •{' '}
+                        {tagStart + 1}-{tagEnd} of {allTags.length} • Keys: j/k,
+                        f/b, g/G
                     </Text>
                     <Box flexDirection="column" marginTop={1}>
                         {tagStart > 0 && (
@@ -267,18 +343,28 @@ function NotesTui() {
                             const realIndex = tagStart + i;
                             const isSel = realIndex === tagIndex;
                             return (
-                                <Text key={`${t}-${realIndex}`} color={isSel ? 'green' : undefined}>
+                                <Text
+                                    key={`${t}-${realIndex}`}
+                                    color={isSel ? 'green' : undefined}
+                                >
                                     {isSel ? '➤ ' : '  '} {t}
                                 </Text>
                             );
                         })}
                         {tagEnd < allTags.length && (
-                            <Text color="gray">… {allTags.length - tagEnd} more below …</Text>
+                            <Text color="gray">
+                                … {allTags.length - tagEnd} more below …
+                            </Text>
                         )}
                     </Box>
                 </Box>
             ) : (
-                <Box flexDirection="column" padding={1} flexGrow={1} overflow="hidden">
+                <Box
+                    flexDirection="column"
+                    padding={1}
+                    flexGrow={1}
+                    overflow="hidden"
+                >
                     <Text color="gray">Notes</Text>
                     {filtered.length === 0 ? (
                         <Text color="gray">No notes match your filters.</Text>
@@ -287,10 +373,18 @@ function NotesTui() {
                             const realIndex = listStart + i;
                             const isSel = realIndex === selectedIndex;
                             return (
-                                <Text key={n.id} color={isSel ? 'green' : undefined}>
+                                <Text
+                                    key={n.id}
+                                    color={isSel ? 'green' : undefined}
+                                >
                                     {isSel ? '➤ ' : '  '}
-                                    {truncate(n.title || '(untitled)', maxTitleWidth)}
-                                    {n.tags && n.tags.length ? `  ·  [${n.tags.join(', ')}]` : ''}
+                                    {truncate(
+                                        n.title || '(untitled)',
+                                        maxTitleWidth
+                                    )}
+                                    {n.tags && n.tags.length
+                                        ? `  ·  [${n.tags.join(', ')}]`
+                                        : ''}
                                     {n.isGoogleDoc ? '  ·  Google Doc' : ''}
                                 </Text>
                             );
@@ -302,7 +396,6 @@ function NotesTui() {
             <Box padding={1} flexShrink={0} borderTop borderColor="gray">
                 <Text color="gray">{legend}</Text>
             </Box>
-
         </Box>
     );
 }
@@ -324,29 +417,48 @@ export async function runNotesTui() {
 
     const restoreInput = () => {
         try {
-            if (process.stdin && (process.stdin as any).isTTY && typeof (process.stdin as any).setRawMode === 'function') {
+            if (
+                process.stdin &&
+                (process.stdin as any).isTTY &&
+                typeof (process.stdin as any).setRawMode === 'function'
+            ) {
                 (process.stdin as any).setRawMode(false);
             }
-        } catch { }
+        } catch {}
     };
 
     const cleanupAndExit = (code: number = 0) => {
-        try { restoreInput(); } catch { }
-        try { instance.unmount(); } catch { }
-        try { leaveAltScreen(); } catch { }
+        try {
+            restoreInput();
+        } catch {}
+        try {
+            instance.unmount();
+        } catch {}
+        try {
+            leaveAltScreen();
+        } catch {}
         process.exit(code);
     };
 
     const onSigint = () => cleanupAndExit(130);
     process.on('SIGINT', onSigint);
     process.on('SIGTERM', () => cleanupAndExit(143));
-    process.on('exit', () => { try { restoreInput(); } catch { }; try { leaveAltScreen(); } catch { } });
+    process.on('exit', () => {
+        try {
+            restoreInput();
+        } catch {}
+        try {
+            leaveAltScreen();
+        } catch {}
+    });
 
     try {
         await instance.waitUntilExit();
     } finally {
         process.off('SIGINT', onSigint);
-        try { leaveAltScreen(); } catch { }
+        try {
+            leaveAltScreen();
+        } catch {}
     }
 }
 

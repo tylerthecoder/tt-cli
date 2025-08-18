@@ -6,30 +6,39 @@ import { z } from 'zod';
 import { colors } from './utils.ts';
 
 async function ensureDir(path: string) {
-  if (!Bun.file(path).exists()) {
-    await mkdir(path, { recursive: true });
-  }
+    if (!Bun.file(path).exists()) {
+        await mkdir(path, { recursive: true });
+    }
 }
 
 const configDir = join(homedir(), '.config', 'tt-cli');
 await ensureDir(configDir);
 const envPath = join(configDir, '.env');
 if (await Bun.file(envPath).exists()) {
-  console.log(colors.yellow, "Loading .env file from ", envPath, colors.reset);
-  dotenv_config({ path: envPath });
+    console.log(
+        colors.yellow,
+        'Loading .env file from ',
+        envPath,
+        colors.reset
+    );
+    dotenv_config({ path: envPath });
 }
 
 const settingsPath = join(configDir, 'settings.json');
 const settingsExists = await Bun.file(settingsPath).exists();
 if (!settingsExists) {
-  console.log(colors.yellow, "No settings file found, creating default settings", colors.reset);
-  await Bun.write(settingsPath, JSON.stringify({}));
+    console.log(
+        colors.yellow,
+        'No settings file found, creating default settings',
+        colors.reset
+    );
+    await Bun.write(settingsPath, JSON.stringify({}));
 }
 
 const settings = JSON.parse(await Bun.file(settingsPath).text());
 
 const zodSettings = z.object({
-  notes_dir: z.string().optional(),
+    notes_dir: z.string().optional(),
 });
 const parsedSettings = zodSettings.parse(settings);
 

@@ -49,14 +49,18 @@ async function install() {
             await $`sudo mv ${tempScriptPath} ${binPath}`;
             await $`sudo chmod +x ${binPath}`;
         } catch (error) {
-            console.error('Failed to move wrapper to /usr/local/bin. Do you have sudo access?');
+            console.error(
+                'Failed to move wrapper to /usr/local/bin. Do you have sudo access?'
+            );
             console.error('You can try running the move command manually:');
             console.error(`sudo mv ${tempScriptPath} ${binPath}`);
             console.error(`sudo chmod +x ${binPath}`);
             process.exit(1);
         }
 
-        console.log(`\nInstallation complete! The 'tt' command is now available.`);
+        console.log(
+            `\nInstallation complete! The 'tt' command is now available.`
+        );
         console.log(`Wrapper installed to: ${binPath}`);
     } catch (error) {
         console.error('Installation failed:', error);

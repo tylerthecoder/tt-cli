@@ -48,7 +48,9 @@ export async function getNotes(): Promise<NoteType[]> {
     return notes;
 }
 
-export async function getNotesAndUntrackedGoogleDocs(options: { ignoreTimeout?: boolean; ignoreCache?: boolean } = {}) {
+export async function getNotesAndUntrackedGoogleDocs(
+    options: { ignoreTimeout?: boolean; ignoreCache?: boolean } = {}
+) {
     const GOOGLE_NOTES_CACHE_FILE = join(CACHE_DIR, 'google-notes.json');
 
     await ensureCacheDir();
@@ -57,11 +59,18 @@ export async function getNotesAndUntrackedGoogleDocs(options: { ignoreTimeout?: 
     if (!options.ignoreCache) {
         try {
             if (existsSync(GOOGLE_NOTES_CACHE_FILE)) {
-                const cacheContent = await readFile(GOOGLE_NOTES_CACHE_FILE, 'utf-8');
-                const cache: CacheData & { googleDocs: any[] } = JSON.parse(cacheContent);
+                const cacheContent = await readFile(
+                    GOOGLE_NOTES_CACHE_FILE,
+                    'utf-8'
+                );
+                const cache: CacheData & { googleDocs: any[] } =
+                    JSON.parse(cacheContent);
 
                 // Return cached data if within TTL or ignoreTimeout is true
-                if (options.ignoreTimeout || Date.now() - cache.timestamp <= CACHE_TTL) {
+                if (
+                    options.ignoreTimeout ||
+                    Date.now() - cache.timestamp <= CACHE_TTL
+                ) {
                     return { notes: cache.notes, googleDocs: cache.googleDocs };
                 }
             }
@@ -71,16 +80,22 @@ export async function getNotesAndUntrackedGoogleDocs(options: { ignoreTimeout?: 
     }
 
     const tt = await getTT();
-    const notesAndUntrackedGoogleDocs = await tt.googleNotes.getAllNotesAndUntrackedGoogleDocs("tylertracy1999@gmail.com");
+    const notesAndUntrackedGoogleDocs =
+        await tt.googleNotes.getAllNotesAndUntrackedGoogleDocs(
+            'tylertracy1999@gmail.com'
+        );
 
     // Always write to cache (even when ignoreCache is true)
     try {
         const cacheData = {
             timestamp: Date.now(),
             notes: notesAndUntrackedGoogleDocs.notes,
-            googleDocs: notesAndUntrackedGoogleDocs.googleDocs
+            googleDocs: notesAndUntrackedGoogleDocs.googleDocs,
         };
-        await writeFile(GOOGLE_NOTES_CACHE_FILE, JSON.stringify(cacheData, null, 2));
+        await writeFile(
+            GOOGLE_NOTES_CACHE_FILE,
+            JSON.stringify(cacheData, null, 2)
+        );
     } catch (error) {
         // Non-fatal
     }
@@ -88,15 +103,24 @@ export async function getNotesAndUntrackedGoogleDocs(options: { ignoreTimeout?: 
     return notesAndUntrackedGoogleDocs;
 }
 
-export function filterNotes(notes: NoteType[], options: { published?: boolean; tag?: string; date?: string }) {
+export function filterNotes(
+    notes: NoteType[],
+    options: { published?: boolean; tag?: string; date?: string }
+) {
     let filtered = [...notes];
     if (options.published) filtered = filtered.filter(n => n.published);
-    if (options.tag) filtered = filtered.filter(n => n.tags?.includes(options.tag as string));
+    if (options.tag)
+        filtered = filtered.filter(n =>
+            n.tags?.includes(options.tag as string)
+        );
     if (options.date) filtered = filtered.filter(n => n.date === options.date);
     return filtered;
 }
 
-export function displayNotes(notes: NoteType[], format: 'text' | 'json' = 'text') {
+export function displayNotes(
+    notes: NoteType[],
+    format: 'text' | 'json' = 'text'
+) {
     if (format === 'json') {
         console.log(JSON.stringify(notes, null, 2));
         return;

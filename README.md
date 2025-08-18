@@ -6,10 +6,16 @@ To install dependencies:
 bun install
 ```
 
-To run:
+To install:
 
 ```bash
-bun run index.ts
+bun run install.ts
 ```
 
-This project was created using `bun init` in bun v1.1.38. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+Settings are located in `~/.config/tt-cli/settings.json`.
+
+```json
+{
+    "notes_dir": "~/Documents/Notes"
+}
+```

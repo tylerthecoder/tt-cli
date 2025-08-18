@@ -1,33 +1,45 @@
 {
-  "bin": {
-    "tt": "./src/index.js"
-  },
-  "dependencies": {
-    "@openai/agents": "^0.0.15",
-    "@tt-services": "link:tt-services",
-    "commander": "^11.0.0",
-    "dotenv": "^16.4.7",
-    "ink": "^4.4.1",
-    "inquirer": "^12.9.1",
-    "js-yaml": "^4.1.0",
-    "pino": "^9.8.0",
-    "pino-pretty": "^13.1.1",
-    "react": "^18.3.1",
-    "react-devtools-core": "^6.1.5"
-  },
-  "description": "CLI tool for TT application",
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/react": "^18.3.7"
-  },
-  "main": "src/index.js",
-  "name": "tt-cli",
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "scripts": {
-    "cli": "bun run src/cli.ts"
-  },
-  "version": "1.0.0"
+    "bin": {
+        "tt": "./src/index.js"
+    },
+    "dependencies": {
+        "@openai/agents": "^0.0.15",
+        "@tt-services": "github:tylerthecoder/tt-services#56fe227c841db750e13bd697142239161fcb6f8b",
+        "bun-pty": "^0.3.2",
+        "commander": "^11.0.0",
+        "dotenv": "^16.4.7",
+        "ink": "^4.4.1",
+        "inquirer": "^12.9.1",
+        "js-yaml": "^4.1.0",
+        "pino": "^9.8.0",
+        "pino-pretty": "^13.1.1",
+        "react": "^18.3.1",
+        "react-devtools-core": "^6.1.5"
+    },
+    "description": "CLI tool for TT application",
+    "devDependencies": {
+        "@types/bun": "latest",
+        "@types/js-yaml": "^4.0.9",
+        "@types/react": "^18.3.7",
+        "@typescript-eslint/eslint-plugin": "^8.39.1",
+        "@typescript-eslint/parser": "^8.39.1",
+        "eslint": "^9.33.0",
+        "eslint-plugin-react": "^7.37.2",
+        "eslint-plugin-react-hooks": "^5.0.0",
+        "prettier": "^3.4.2"
+    },
+    "main": "src/index.js",
+    "name": "tt-cli",
+    "type": "module",
+    "peerDependencies": {
+        "typescript": "^5.0.0"
+    },
+    "scripts": {
+        "cli": "bun run src/cli.ts",
+        "lint": "eslint . --max-warnings 0",
+        "lint:fix": "eslint . --fix",
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
+    },
+    "version": "1.0.0"
 }
