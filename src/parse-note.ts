@@ -415,7 +415,7 @@ export async function findRemoteNotesToDownload(dir?: string): Promise<Note[]> {
 type Conflict = {
     local: { note: NoteType; path: string };
     remote: Note;
-    conflictType: Array<string>;
+    conflictType: Array<{ key: string, localValue: any, remoteValue: any }>;
 };
 
 async function getNotesDirHasGitChanges() {
@@ -488,41 +488,43 @@ async function handleConflict() {
                 process.exit(1);
             }
 
-            let conflictType: Array<string> = [];
-            if (remoteNote.title !== note.title) {
-                conflictType.push('title');
-            }
-            if (remoteNote.date !== note.date) {
-                conflictType.push('date');
-            }
-            if (
-                JSON.stringify(remoteNote.tags ?? []) !==
-                JSON.stringify(note.tags ?? [])
-            ) {
-                conflictType.push('tags');
-            }
-            const localContentNoFrontmatter = removeFrontmatterFromMarkdownFile(
-                {
-                    content: note.content,
-                    path: path,
-                }
-            );
-            if (localContentNoFrontmatter !== remoteNote.content) {
-                conflictType.push('content');
-            }
+            let conflictType: Array<{ key: string, localValue: any, remoteValue: any }> = [];
 
-            // Check if any of the other keys are different
-            const otherKeys = Object.keys(note).filter(
-                key =>
-                    key !== 'id' &&
-                    key !== 'title' &&
-                    key !== 'date' &&
-                    key !== 'tags' &&
-                    key !== 'content'
-            );
-            for (const key of otherKeys) {
-                if (remoteNote[key as keyof Note] !== note[key as keyof Note]) {
-                    conflictType.push(key);
+            // Get all unique keys from both notes
+            const allKeys = new Set([
+                ...Object.keys(note),
+                ...Object.keys(remoteNote)
+            ]);
+
+            for (const key of allKeys) {
+                // Skip id as it should always match
+                if (key === 'id') continue;
+                if (key === 'googleDocContent') continue;
+
+                let localValue = note[key as keyof typeof note] ?? null;
+                let remoteValue = remoteNote[key as keyof typeof remoteNote] ?? null;
+
+                // Special handling for content
+                if (key === 'content') {
+                    localValue = removeFrontmatterFromMarkdownFile({
+                        content: note.content,
+                        path: path,
+                    });
+                }
+
+                if (Array.isArray(localValue) || Array.isArray(remoteValue)) {
+                    localValue = JSON.stringify(localValue);
+                    remoteValue = JSON.stringify(remoteValue);
+                }
+
+                if (typeof localValue === 'object' && typeof remoteValue === 'object') {
+                    localValue = JSON.stringify(localValue);
+                    remoteValue = JSON.stringify(remoteValue);
+                }
+
+                if (localValue !== remoteValue) {
+                    logger.info({ key, localValue, remoteValue, type: typeof localValue, type2: typeof remoteValue }, "Conflict");
+                    conflictType.push({ key, localValue, remoteValue });
                 }
             }
 
@@ -583,19 +585,26 @@ async function handleConflict() {
     }
 
     // Then, push the changes to the server
-    logger.info('Pushing changes to server');
+    logger.info('Starting to push changes to server');
 
     for (const conflict of conflicts) {
-        logger.info({ conflict }, 'Pushing changes to server');
+
+        logger.info({ noteTitle: conflict.remote.title, conflictType: conflict.conflictType }, 'Found conflicts for note');
+
         const confirmPush = await confirm(
             logger,
             `Push changes to server for note ${conflict.remote.title}?`
         );
         if (confirmPush) {
-            await tt.notes.updateNote(
+            const newNote = await tt.notes.updateNote(
                 conflict.remote.id,
                 conflict.local.note
             );
+            await saveNoteToFs(newNote, {
+                dir: notesDir,
+                confirmOverwrite: false,
+                shouldLog: true,
+            });
         }
     }
 
