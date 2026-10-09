@@ -178,3 +178,16 @@ test('quoted unique keys and nested anchors are accepted', async () => {
         copy: { description: 'Nested', id: 'nested-id' },
     });
 });
+
+test('CRLF block frontmatter keeps nested values and the original body', async () => {
+    const file = {
+        path: 'windows.md',
+        content:
+            '---\r\nid: windows-note\r\ntags:\r\n  - research\r\n---\r\nBody\r\n',
+    };
+    expect(await extractFrontmatterFromMarkdownFile(file)).toEqual({
+        id: 'windows-note',
+        tags: ['research'],
+    });
+    expect(removeFrontmatterFromMarkdownFile(file)).toBe('Body\r\n');
+});

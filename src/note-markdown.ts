@@ -61,7 +61,8 @@ export type NoteFile = {
 // to the wrong remote note. Indented nested values/anchors remain Bun's job.
 function hasUniqueFrontmatterKeys(lines: string[]): boolean {
     const keys = new Set<string>();
-    for (const line of lines) {
+    for (const rawLine of lines) {
+        const line = rawLine.replace(/\r$/, '');
         if (/^\s*(?:#.*)?$/.test(line) || /^[ \t]/.test(line)) continue;
         const match = line.match(
             /^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^?:,\[\]{}#&*!|>'"%@` \t][^:#]*):(?:[ \t]|$)/
