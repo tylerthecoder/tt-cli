@@ -120,6 +120,7 @@ function NotesTui() {
     const [tagIndex, setTagIndex] = useState(0);
     const [actionError, setActionError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [pagerActive, setPagerActive] = useState(false);
     const actionInProgress = useRef(false);
     const beginAction = useRef<(() => void) | null>(null);
 
@@ -147,6 +148,12 @@ function NotesTui() {
     useInput(
         async (input, key) => {
             if (actionInProgress.current) return;
+            // Loading/error screens have no visible search or tag controls.
+            if (!notes) {
+                if (input === 'q' || (key.ctrl && input === 'c')) exit();
+                else if (input === 'r' || (key.ctrl && input === 'l')) reload();
+                return;
+            }
             // Global refresh shortcut: r or Ctrl+L (disabled while typing in search mode)
             if (
                 mode !== 'search' &&
@@ -223,10 +230,7 @@ function NotesTui() {
                 if (!target) return;
                 actionInProgress.current = true;
                 setActionError(null);
-                await new Promise<void>(resolve => {
-                    beginAction.current = resolve;
-                    setBusy(true);
-                });
+                setBusy(true);
                 try {
                     if (input === 'o') {
                         if (target.isGoogleDoc)
@@ -244,6 +248,12 @@ function NotesTui() {
                             throw new Error(
                                 'This note could not be found. Press r to refresh.'
                             );
+                        // Keep Ink consuming input during network/browser waits.
+                        // Release it only once content is ready for the pager.
+                        await new Promise<void>(resolve => {
+                            beginAction.current = resolve;
+                            setPagerActive(true);
+                        });
                         await viewWithLess(
                             `# ${full.title}\n\n${full.content || ''}\n`
                         );
@@ -252,6 +262,7 @@ function NotesTui() {
                     setActionError(errorMessage(error));
                 } finally {
                     actionInProgress.current = false;
+                    setPagerActive(false);
                     setBusy(false);
                 }
                 return;
@@ -259,16 +270,16 @@ function NotesTui() {
             else if (input === 'q') exit();
             // Enter no longer prints & exits
         },
-        { isActive: !busy }
+        { isActive: !pagerActive }
     );
 
     // useInput's effects above release stdin before the pager can claim it.
     useEffect(() => {
-        if (busy) {
+        if (pagerActive) {
             beginAction.current?.();
             beginAction.current = null;
         }
-    }, [busy]);
+    }, [pagerActive]);
 
     if (error && !notes)
         return (
