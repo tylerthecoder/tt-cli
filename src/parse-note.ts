@@ -1,14 +1,8 @@
 import path, { join } from 'path';
+import { existsSync } from 'fs';
 import type { NoteType, Note } from '@tt-services';
 import * as yaml from 'js-yaml';
-import {
-    readdir,
-    readFile,
-    writeFile,
-    stat,
-    exists,
-    unlink,
-} from 'fs/promises';
+import { readdir, readFile, writeFile, stat, unlink } from 'fs/promises';
 import type {
     CreatableNote,
     NoteMetadata,
@@ -58,7 +52,7 @@ export async function generateNoteFilename(
 
     while (true) {
         const notePath = path.join(notesDir, `${safeTitle}.md`);
-        if (!(await exists(notePath))) {
+        if (!existsSync(notePath)) {
             break;
         }
         safeTitle = `${safeTitle}-${Math.random().toString(36).substring(2, 15)}`;
@@ -117,7 +111,7 @@ export async function saveNoteToFs(
         (existingNote ? existingNote.path : path.join(notesDir, filename));
 
     const confirmOverwrite = opts.confirmOverwrite ?? false;
-    if (confirmOverwrite && (await exists(filePath))) {
+    if (confirmOverwrite && existsSync(filePath)) {
         const confirmed = await confirm(
             logger,
             `Note already exists locally at ${filePath}, overwrite?`
@@ -415,14 +409,13 @@ export async function findRemoteNotesToDownload(dir?: string): Promise<Note[]> {
 type Conflict = {
     local: { note: NoteType; path: string };
     remote: Note;
-    conflictType: Array<{ key: string, localValue: any, remoteValue: any }>;
+    conflictType: Array<{ key: string; localValue: any; remoteValue: any }>;
 };
 
 async function getNotesDirHasGitChanges() {
     const dir = requireNotesDir();
     const { stdout } = await $`git -C ${dir} status --porcelain`.quiet();
     return stdout.toString().trim().length > 0;
-
 }
 
 async function getNotesDirShortStatus() {
@@ -488,12 +481,16 @@ async function handleConflict() {
                 process.exit(1);
             }
 
-            let conflictType: Array<{ key: string, localValue: any, remoteValue: any }> = [];
+            let conflictType: Array<{
+                key: string;
+                localValue: any;
+                remoteValue: any;
+            }> = [];
 
             // Get all unique keys from both notes
             const allKeys = new Set([
                 ...Object.keys(note),
-                ...Object.keys(remoteNote)
+                ...Object.keys(remoteNote),
             ]);
 
             for (const key of allKeys) {
@@ -502,7 +499,8 @@ async function handleConflict() {
                 if (key === 'googleDocContent') continue;
 
                 let localValue = note[key as keyof typeof note] ?? null;
-                let remoteValue = remoteNote[key as keyof typeof remoteNote] ?? null;
+                let remoteValue =
+                    remoteNote[key as keyof typeof remoteNote] ?? null;
 
                 // Special handling for content
                 if (key === 'content') {
@@ -517,13 +515,25 @@ async function handleConflict() {
                     remoteValue = JSON.stringify(remoteValue);
                 }
 
-                if (typeof localValue === 'object' && typeof remoteValue === 'object') {
+                if (
+                    typeof localValue === 'object' &&
+                    typeof remoteValue === 'object'
+                ) {
                     localValue = JSON.stringify(localValue);
                     remoteValue = JSON.stringify(remoteValue);
                 }
 
                 if (localValue !== remoteValue) {
-                    logger.info({ key, localValue, remoteValue, type: typeof localValue, type2: typeof remoteValue }, "Conflict");
+                    logger.info(
+                        {
+                            key,
+                            localValue,
+                            remoteValue,
+                            type: typeof localValue,
+                            type2: typeof remoteValue,
+                        },
+                        'Conflict'
+                    );
                     conflictType.push({ key, localValue, remoteValue });
                 }
             }
@@ -588,8 +598,13 @@ async function handleConflict() {
     logger.info('Starting to push changes to server');
 
     for (const conflict of conflicts) {
-
-        logger.info({ noteTitle: conflict.remote.title, conflictType: conflict.conflictType }, 'Found conflicts for note');
+        logger.info(
+            {
+                noteTitle: conflict.remote.title,
+                conflictType: conflict.conflictType,
+            },
+            'Found conflicts for note'
+        );
 
         const confirmPush = await confirm(
             logger,

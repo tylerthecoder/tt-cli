@@ -1,45 +1,52 @@
 import { join } from 'path';
 import { homedir } from 'os';
-import { config as dotenv_config } from 'dotenv';
-import { mkdir } from 'fs/promises';
-import { z } from 'zod';
-import { colors } from './utils.ts';
+import { config as dotenvConfig } from 'dotenv';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 
-async function ensureDir(path: string) {
-    if (!Bun.file(path).exists()) {
-        await mkdir(path, { recursive: true });
+export async function loadSettings(home = homedir()) {
+    const configDir = join(home, '.config', 'tt-cli');
+    const settingsPath = join(configDir, 'settings.json');
+    await mkdir(configDir, { recursive: true });
+
+    // Exclusive creation preserves settings if another invocation starts first.
+    try {
+        await writeFile(settingsPath, '{}\n', { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
+
+    let settings: unknown;
+    try {
+        settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+    } catch {
+        throw new Error(
+            `Cannot read settings at ${settingsPath}. Expected valid JSON.`
+        );
+    }
+    if (
+        !settings ||
+        typeof settings !== 'object' ||
+        Array.isArray(settings) ||
+        ('notes_dir' in settings &&
+            (typeof settings.notes_dir !== 'string' ||
+                !settings.notes_dir.trim()))
+    ) {
+        throw new Error(
+            `Invalid settings at ${settingsPath}: notes_dir must be a non-empty string.`
+        );
+    }
+    const notesDir = (settings as { notes_dir?: string }).notes_dir;
+    return {
+        notes_dir:
+            notesDir === '~'
+                ? home
+                : notesDir?.startsWith('~/')
+                  ? join(home, notesDir.slice(2))
+                  : notesDir,
+    };
 }
 
 const configDir = join(homedir(), '.config', 'tt-cli');
-await ensureDir(configDir);
-const envPath = join(configDir, '.env');
-if (await Bun.file(envPath).exists()) {
-    console.log(
-        colors.yellow,
-        'Loading .env file from ',
-        envPath,
-        colors.reset
-    );
-    dotenv_config({ path: envPath });
-}
-
-const settingsPath = join(configDir, 'settings.json');
-const settingsExists = await Bun.file(settingsPath).exists();
-if (!settingsExists) {
-    console.log(
-        colors.yellow,
-        'No settings file found, creating default settings',
-        colors.reset
-    );
-    await Bun.write(settingsPath, JSON.stringify({}));
-}
-
-const settings = JSON.parse(await Bun.file(settingsPath).text());
-
-const zodSettings = z.object({
-    notes_dir: z.string().optional(),
-});
-const parsedSettings = zodSettings.parse(settings);
-
-export const NOTES_DIR = parsedSettings.notes_dir;
+// Keep stdout available for command output, including JSON.
+dotenvConfig({ path: join(configDir, '.env'), quiet: true });
+export const NOTES_DIR = (await loadSettings()).notes_dir;

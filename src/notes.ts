@@ -3,7 +3,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { $ } from 'bun';
+export { openNoteLink, openGoogleDocLink } from './browser.ts';
 import { getTT } from './utils.ts';
 
 const CACHE_DIR = join(homedir(), '.cache', 'tt-cli');
@@ -137,12 +137,4 @@ export function displayNotes(
 export async function getNoteById(id: string): Promise<Note | null> {
     const tt = await getTT();
     return tt.notes.getNoteById(id);
-}
-
-export async function openNoteLink(id: string) {
-    await $`xdg-open https://tylertracy.com/notes/${id}`.quiet();
-}
-
-export async function openGoogleDocLink(id: string) {
-    await $`xdg-open https://docs.google.com/document/d/${id}`.quiet();
 }

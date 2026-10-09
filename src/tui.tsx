@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { render, Box, Text, useApp, useInput } from 'ink';
-import { spawn } from 'child_process';
+import { clampSelection, errorMessage, runPager } from './tui-helpers.ts';
 import {
     getNotesAndUntrackedGoogleDocs,
     openGoogleDocLink,
@@ -40,26 +40,14 @@ async function viewWithLess(content: string) {
         process.stdout.write('\x1b[?25h'); // show cursor for less
     } catch {}
 
-    await new Promise<void>(resolve => {
-        const less = spawn('less', ['-R'], {
-            stdio: ['pipe', 'inherit', 'inherit'],
-        });
-        less.stdin?.write(content);
-        less.stdin?.end();
-        less.on('exit', () => resolve());
-        less.on('close', () => resolve());
-    });
-
     try {
-        if (
-            (process.stdin as any).isTTY &&
-            typeof (process.stdin as any).setRawMode === 'function'
-        ) {
-            (process.stdin as any).setRawMode(true);
-        }
-        process.stdout.write('\x1b[?25l'); // hide cursor again
-        process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); // clear for redraw
-    } catch {}
+        await runPager(content);
+    } finally {
+        try {
+            if (process.stdin.isTTY) process.stdin.setRawMode(true);
+            process.stdout.write('\x1b[?25l\x1b[2J\x1b[3J\x1b[H');
+        } catch {}
+    }
 }
 
 type Mode = 'list' | 'search' | 'tagSelect';
@@ -76,39 +64,50 @@ function useNotesData() {
     const [tags, setTags] = useState<string[] | null>(null);
     const [error, setError] = useState<string | null>(null);
 
+    const fetching = useRef(false);
+
     async function fetchNotes(ignoreCache: boolean = false) {
-        const { notes, googleDocs } = await getNotesAndUntrackedGoogleDocs({
-            ignoreTimeout: true,
-            ignoreCache,
-        });
-        const tagSet = new Set<string>();
-        for (const n of notes) (n.tags || []).forEach(t => tagSet.add(t));
-        const displayItems: DisplayItem[] = [];
-        for (const n of notes) {
-            displayItems.push({
-                title: n.title,
-                tags: n.tags || [],
-                isGoogleDoc: false,
-                id: n.id,
+        if (fetching.current) return;
+        fetching.current = true;
+        setError(null);
+        try {
+            const { notes, googleDocs } = await getNotesAndUntrackedGoogleDocs({
+                ignoreTimeout: true,
+                ignoreCache,
             });
+            const tagSet = new Set<string>();
+            for (const n of notes) (n.tags || []).forEach(t => tagSet.add(t));
+            const displayItems: DisplayItem[] = [];
+            for (const n of notes) {
+                displayItems.push({
+                    title: n.title,
+                    tags: n.tags || [],
+                    isGoogleDoc: false,
+                    id: n.id,
+                });
+            }
+            for (const gd of googleDocs) {
+                displayItems.push({
+                    title: gd.name || '',
+                    tags: [],
+                    isGoogleDoc: true,
+                    id: gd.id || '',
+                });
+            }
+            setNotes(displayItems);
+            setTags(Array.from(tagSet).sort());
+        } catch (error) {
+            setError(errorMessage(error));
+        } finally {
+            fetching.current = false;
         }
-        for (const gd of googleDocs) {
-            displayItems.push({
-                title: gd.name || '',
-                tags: [],
-                isGoogleDoc: true,
-                id: gd.id || '',
-            });
-        }
-        setNotes(displayItems);
-        setTags(Array.from(tagSet).sort());
     }
 
     useEffect(() => {
         fetchNotes();
     }, []);
 
-    return { notes, tags, error, fetchNotes, reload: () => fetchNotes(true) };
+    return { notes, tags, error, reload: () => fetchNotes(true) };
 }
 
 function NotesTui() {
@@ -119,6 +118,10 @@ function NotesTui() {
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [tagIndex, setTagIndex] = useState(0);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const actionInProgress = useRef(false);
+    const beginAction = useRef<(() => void) | null>(null);
 
     const allTags = useMemo(() => ['(all)', ...(tags || [])], [tags]);
 
@@ -141,112 +144,138 @@ function NotesTui() {
         if (tagIndex >= total) setTagIndex(Math.max(0, total - 1));
     }, [allTags.length]);
 
-    useInput(async (input, key) => {
-        // Global refresh shortcut: r or Ctrl+L (disabled while typing in search mode)
-        if (
-            mode !== 'search' &&
-            (input === 'r' || (key.ctrl && input === 'l'))
-        ) {
-            try {
-                process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-            } catch {}
-            reload();
-            return;
-        }
-
-        if (mode === 'search') {
-            if (key.return) {
-                setMode('list');
-                return;
-            }
-            if (key.escape) {
-                setMode('list');
-                return;
-            }
-            if (key.backspace || key.delete) {
-                setQuery(q => q.slice(0, -1));
-                return;
-            }
-            if (key.ctrl && input === 'u') {
-                setQuery('');
-                return;
-            }
-            if (input) {
-                setQuery(q => q + input);
-            }
-            return;
-        }
-
-        if (mode === 'tagSelect') {
-            if (key.upArrow || input === 'k')
-                setTagIndex(i => Math.max(0, i - 1));
-            else if (key.downArrow || input === 'j')
-                setTagIndex(i => Math.min(allTags.length - 1, i + 1));
-            else if (input === 'b') setTagIndex(i => Math.max(0, i - 10));
-            else if (input === 'f')
-                setTagIndex(i => Math.min(allTags.length - 1, i + 10));
-            else if (input === 'g') setTagIndex(0);
-            else if (input === 'G')
-                setTagIndex(Math.max(0, allTags.length - 1));
-            else if (key.escape) setMode('list');
-            else if (key.return) {
-                const t = allTags[tagIndex];
-                setSelectedTag(t === '(all)' ? null : t);
-                setMode('list');
-            }
-            return;
-        }
-
-        // list mode
-        if (key.upArrow || input === 'k')
-            setSelectedIndex(i => Math.max(0, i - 1));
-        else if (key.downArrow || input === 'j')
-            setSelectedIndex(i => Math.min(filtered.length - 1, i + 1));
-        else if (input === 'b') setSelectedIndex(i => Math.max(0, i - 10));
-        else if (input === 'f')
-            setSelectedIndex(i => Math.min(filtered.length - 1, i + 10));
-        else if (input === 'g') setSelectedIndex(0);
-        else if (input === 'G')
-            setSelectedIndex(Math.max(0, filtered.length - 1));
-        else if (input === '/') setMode('search');
-        else if (input === 't') {
-            setMode('tagSelect');
-            setTagIndex(0);
-        } else if (input === 'o') {
-            const target = filtered[selectedIndex];
-            if (!target) return;
-            if (target.isGoogleDoc) {
-                await openGoogleDocLink(target.id);
-            } else {
-                await openNoteLink(target.id);
-            }
-            process.exit(0);
-        } else if (input === 'v') {
-            const target = filtered[selectedIndex];
-            if (!target) return;
-            (async () => {
+    useInput(
+        async (input, key) => {
+            if (actionInProgress.current) return;
+            // Global refresh shortcut: r or Ctrl+L (disabled while typing in search mode)
+            if (
+                mode !== 'search' &&
+                (input === 'r' || (key.ctrl && input === 'l'))
+            ) {
                 try {
-                    const tt = await getTT();
-                    const full = await tt.notes.getNoteById(target.id);
-                    if (!full) return;
-                    const body = `# ${full.title}\n\n${full.content || ''}\n`;
-                    await viewWithLess(body);
-                    // After less, redraw prompt area by bumping a render
-                    // No state change needed; screen clear will cause Ink to re-render
-                } catch (e) {
-                    // ignore errors; stay in TUI
-                }
-            })();
-            return;
-        } else if (input === 'c' && key.ctrl) exit();
-        else if (input === 'q') exit();
-        // Enter no longer prints & exits
-    });
+                    process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+                } catch {}
+                setActionError(null);
+                reload();
+                return;
+            }
 
-    if (error)
+            if (mode === 'search') {
+                if (key.return) {
+                    setMode('list');
+                    return;
+                }
+                if (key.escape) {
+                    setMode('list');
+                    return;
+                }
+                if (key.backspace || key.delete) {
+                    setQuery(q => q.slice(0, -1));
+                    return;
+                }
+                if (key.ctrl && input === 'u') {
+                    setQuery('');
+                    return;
+                }
+                if (input) {
+                    setQuery(q => q + input);
+                }
+                return;
+            }
+
+            if (mode === 'tagSelect') {
+                if (key.upArrow || input === 'k')
+                    setTagIndex(i => Math.max(0, i - 1));
+                else if (key.downArrow || input === 'j')
+                    setTagIndex(i => Math.min(allTags.length - 1, i + 1));
+                else if (input === 'b') setTagIndex(i => Math.max(0, i - 10));
+                else if (input === 'f')
+                    setTagIndex(i => Math.min(allTags.length - 1, i + 10));
+                else if (input === 'g') setTagIndex(0);
+                else if (input === 'G')
+                    setTagIndex(Math.max(0, allTags.length - 1));
+                else if (key.escape) setMode('list');
+                else if (key.return) {
+                    const t = allTags[tagIndex];
+                    setSelectedTag(t === '(all)' ? null : t);
+                    setMode('list');
+                }
+                return;
+            }
+
+            // list mode
+            if (key.upArrow || input === 'k')
+                setSelectedIndex(i => Math.max(0, i - 1));
+            else if (key.downArrow || input === 'j')
+                setSelectedIndex(i => clampSelection(i + 1, filtered.length));
+            else if (input === 'b') setSelectedIndex(i => Math.max(0, i - 10));
+            else if (input === 'f')
+                setSelectedIndex(i => clampSelection(i + 10, filtered.length));
+            else if (input === 'g') setSelectedIndex(0);
+            else if (input === 'G')
+                setSelectedIndex(Math.max(0, filtered.length - 1));
+            else if (input === '/') setMode('search');
+            else if (input === 't') {
+                setMode('tagSelect');
+                setTagIndex(0);
+            } else if (input === 'o' || input === 'v') {
+                const target = filtered[selectedIndex];
+                if (!target) return;
+                actionInProgress.current = true;
+                setActionError(null);
+                await new Promise<void>(resolve => {
+                    beginAction.current = resolve;
+                    setBusy(true);
+                });
+                try {
+                    if (input === 'o') {
+                        if (target.isGoogleDoc)
+                            await openGoogleDocLink(target.id);
+                        else await openNoteLink(target.id);
+                        exit();
+                    } else if (target.isGoogleDoc) {
+                        setActionError(
+                            'Google Docs cannot be viewed here. Press o to open in your browser.'
+                        );
+                    } else {
+                        const tt = await getTT();
+                        const full = await tt.notes.getNoteById(target.id);
+                        if (!full)
+                            throw new Error(
+                                'This note could not be found. Press r to refresh.'
+                            );
+                        await viewWithLess(
+                            `# ${full.title}\n\n${full.content || ''}\n`
+                        );
+                    }
+                } catch (error) {
+                    setActionError(errorMessage(error));
+                } finally {
+                    actionInProgress.current = false;
+                    setBusy(false);
+                }
+                return;
+            } else if (input === 'c' && key.ctrl) exit();
+            else if (input === 'q') exit();
+            // Enter no longer prints & exits
+        },
+        { isActive: !busy }
+    );
+
+    // useInput's effects above release stdin before the pager can claim it.
+    useEffect(() => {
+        if (busy) {
+            beginAction.current?.();
+            beginAction.current = null;
+        }
+    }, [busy]);
+
+    if (error && !notes)
         return (
             <Box flexDirection="column">
-                <Text color="red">Error: {error}</Text>
+                <Text color="red">
+                    Error: {error}. Press r to retry or q to quit.
+                </Text>
             </Box>
         );
 
@@ -393,6 +422,10 @@ function NotesTui() {
                 </Box>
             )}
 
+            {(actionError || error) && (
+                <Text color="red">{actionError || error}</Text>
+            )}
+            {busy && <Text color="yellow">Opening…</Text>}
             <Box padding={1} flexShrink={0} borderTop borderColor="gray">
                 <Text color="gray">{legend}</Text>
             </Box>
@@ -407,58 +440,41 @@ export async function runNotesTui() {
 
     enterAltScreen();
 
-    const instance = render(<NotesTui />, {
-        stdin: process.stdin as any,
-        stdout: process.stdout as any,
-        stderr: process.stderr as any,
-        exitOnCtrlC: true,
-        patchConsole: true,
-    });
-
-    const restoreInput = () => {
+    let instance: ReturnType<typeof render> | undefined;
+    const cleanup = () => {
         try {
-            if (
-                process.stdin &&
-                (process.stdin as any).isTTY &&
-                typeof (process.stdin as any).setRawMode === 'function'
-            ) {
-                (process.stdin as any).setRawMode(false);
-            }
+            instance?.unmount();
         } catch {}
+        try {
+            if (process.stdin.isTTY) process.stdin.setRawMode(false);
+        } catch {}
+        leaveAltScreen();
     };
-
-    const cleanupAndExit = (code: number = 0) => {
-        try {
-            restoreInput();
-        } catch {}
-        try {
-            instance.unmount();
-        } catch {}
-        try {
-            leaveAltScreen();
-        } catch {}
-        process.exit(code);
+    const onSigint = () => {
+        cleanup();
+        process.exit(130);
     };
-
-    const onSigint = () => cleanupAndExit(130);
+    const onSigterm = () => {
+        cleanup();
+        process.exit(143);
+    };
     process.on('SIGINT', onSigint);
-    process.on('SIGTERM', () => cleanupAndExit(143));
-    process.on('exit', () => {
-        try {
-            restoreInput();
-        } catch {}
-        try {
-            leaveAltScreen();
-        } catch {}
-    });
-
+    process.on('SIGTERM', onSigterm);
+    process.on('exit', cleanup);
     try {
+        instance = render(<NotesTui />, {
+            stdin: process.stdin,
+            stdout: process.stdout,
+            stderr: process.stderr,
+            exitOnCtrlC: true,
+            patchConsole: true,
+        });
         await instance.waitUntilExit();
     } finally {
         process.off('SIGINT', onSigint);
-        try {
-            leaveAltScreen();
-        } catch {}
+        process.off('SIGTERM', onSigterm);
+        process.off('exit', cleanup);
+        cleanup();
     }
 }
 
