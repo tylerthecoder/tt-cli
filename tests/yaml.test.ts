@@ -45,25 +45,6 @@ test('Bun YAML preserves scalar-looking strings, nulls, arrays, and nested metad
     expect((await roundTrip(extra)).parsed).toEqual({ ...metadata, ...extra });
 });
 
-test('Date values become ISO timestamps, undefined fields are omitted, and array positions survive', async () => {
-    const timestamp = new Date('2026-10-09T12:00:00.000Z');
-    const extra = {
-        createdAt: timestamp,
-        unused: undefined,
-        nested: { date: timestamp, unused: undefined },
-        values: [1, undefined, null, timestamp],
-    };
-    const { parsed } = await roundTrip(extra);
-    expect(parsed).toEqual({
-        ...metadata,
-        nested: { date: timestamp.toISOString() },
-        values: [1, null, null, timestamp.toISOString()],
-    });
-    expect(extra.createdAt).toBe(timestamp);
-    expect(extra.values[1]).toBeUndefined();
-    expect(Object.hasOwn(extra, 'unused')).toBe(true);
-});
-
 test('formatting does not delete database IDs or alter the input note', async () => {
     const note = Object.freeze({
         ...metadata,

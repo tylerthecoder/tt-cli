@@ -10,41 +10,8 @@ export const getPrintableNoteContent = (note: NoteType | CreatableNote) => {
     );
 };
 
-// Bun does not serialize Date instances, and drops undefined array entries.
-// Preserve the existing metadata representation without mutating service objects.
-function printableValue(
-    value: unknown,
-    ancestors = new Set<object>()
-): unknown {
-    if (value instanceof Date) return value.toISOString();
-    if (
-        typeof value === 'function' ||
-        typeof value === 'symbol' ||
-        typeof value === 'bigint'
-    )
-        return undefined;
-    if (value === null || typeof value !== 'object') return value;
-    if (ancestors.has(value))
-        throw new TypeError(
-            'Note metadata must not contain circular references'
-        );
-    const next = new Set(ancestors).add(value);
-    if (Array.isArray(value)) {
-        return value
-            .filter(
-                item => !['function', 'symbol', 'bigint'].includes(typeof item)
-            )
-            .map(item => printableValue(item, next) ?? null);
-    }
-    return Object.fromEntries(
-        Object.entries(value)
-            .map(([key, item]) => [key, printableValue(item, next)])
-            .filter(([, item]) => item !== undefined)
-    );
-}
-
 export function formatNoteAsMarkdown(note: NoteType): string {
-    const metadata = printableValue(getPrintableNoteContent(note));
+    const metadata = getPrintableNoteContent(note);
     const frontmatter = Bun.YAML.stringify(metadata, null, 2);
     return ['---', frontmatter.trim(), '---', note.content].join('\n');
 }

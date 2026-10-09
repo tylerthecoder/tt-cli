@@ -57,8 +57,8 @@ remote records after its prompts. It is not a read-only validation command.
 
 File contents, JSON settings, and caches use `Bun.file()` and `Bun.write()`;
 browser and pager processes use `Bun.spawn()`. Note frontmatter uses
-`Bun.YAML.parse()` and `Bun.YAML.stringify()` with compatibility handling for
-Date values and undefined metadata. Frontmatter must use an unindented root block
+`Bun.YAML.parse()` and `Bun.YAML.stringify()` directly. Note timestamps are ISO
+strings, as defined by tt-services. Frontmatter must use an unindented root block
 mapping with unique, one-line scalar keys (plain or quoted). Root flow maps,
 explicit/complex/multiline keys, and root merge keys are rejected so duplicate
 note IDs cannot be silently selected by the parser. Nested mappings, sequences,
