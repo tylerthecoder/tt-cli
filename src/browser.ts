@@ -1,7 +1,19 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execFileAsync = promisify(execFile);
+async function launchBrowser(command: string, args: string[]) {
+    const child = Bun.spawn([command, ...args], {
+        stdin: 'ignore',
+        stdout: 'ignore',
+        stderr: 'pipe',
+    });
+    const [code, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stderr).text(),
+    ]);
+    if (code !== 0) {
+        throw new Error(
+            `${command} exited with ${child.signalCode || `status ${code}`}${stderr.trim() ? `: ${stderr.trim()}` : ''}`
+        );
+    }
+}
 
 export function browserCommand(url: string, platform = process.platform) {
     if (platform === 'darwin') return ['open', url] as const;
@@ -17,7 +29,7 @@ export async function openLink(
     } = {}
 ) {
     const [command, argument] = browserCommand(url, options.platform);
-    await (options.launch ?? execFileAsync)(command, [argument]);
+    await (options.launch ?? launchBrowser)(command, [argument]);
 }
 
 export async function openNoteLink(id: string) {

@@ -1,17 +1,13 @@
 #!/usr/bin/env bun
 import { Command, Option } from 'commander';
-import { config } from 'dotenv';
-import { join } from 'path';
-import { homedir } from 'os';
+import { loadEnvironment } from './environment.ts';
 import { version } from '../package.json';
 
 export function createProgram() {
     const program = new Command();
     program.name('tt').description("Tyler's Things CLI").version(version);
-    program.hook('preAction', () => {
-        const configPath = join(homedir(), '.config', 'tt-cli', '.env');
-        if (config({ path: configPath, quiet: true }).error)
-            config({ quiet: true });
+    program.hook('preAction', async () => {
+        await loadEnvironment();
     });
 
     const notes = program.command('notes').description('Note operations');

@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { homedir } from 'os';
-import { config as dotenvConfig } from 'dotenv';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { loadEnvironment } from './environment.ts';
+import { mkdir, writeFile } from 'node:fs/promises';
 
 export async function loadSettings(home = homedir()) {
     const configDir = join(home, '.config', 'tt-cli');
@@ -17,7 +17,7 @@ export async function loadSettings(home = homedir()) {
 
     let settings: unknown;
     try {
-        settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+        settings = await Bun.file(settingsPath).json();
     } catch {
         throw new Error(
             `Cannot read settings at ${settingsPath}. Expected valid JSON.`
@@ -46,7 +46,5 @@ export async function loadSettings(home = homedir()) {
     };
 }
 
-const configDir = join(homedir(), '.config', 'tt-cli');
-// Keep stdout available for command output, including JSON.
-dotenvConfig({ path: join(configDir, '.env'), quiet: true });
+await loadEnvironment();
 export const NOTES_DIR = (await loadSettings()).notes_dir;
