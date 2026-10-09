@@ -63,6 +63,7 @@ function hasUniqueFrontmatterKeys(lines: string[]): boolean {
     const keys = new Set<string>();
     for (const rawLine of lines) {
         const line = rawLine.replace(/\r$/, '');
+        if (line.includes('\r')) return false;
         if (/^\s*(?:#.*)?$/.test(line) || /^[ \t]/.test(line)) continue;
         const match = line.match(
             /^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^?:,\[\]{}#&*!|>'"%@` \t][^:#]*):(?:[ \t]|$)/

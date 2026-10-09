@@ -191,3 +191,12 @@ test('CRLF block frontmatter keeps nested values and the original body', async (
     });
     expect(removeFrontmatterFromMarkdownFile(file)).toBe('Body\r\n');
 });
+
+test('bare carriage returns cannot hide duplicate identity keys', async () => {
+    expect(
+        await extractFrontmatterFromMarkdownFile({
+            path: 'ambiguous.md',
+            content: '---\nid: first\rid: second\n---\nBody',
+        })
+    ).toBeNull();
+});
