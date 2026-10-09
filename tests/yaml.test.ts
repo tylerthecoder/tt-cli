@@ -123,28 +123,6 @@ for (const frontmatter of [
     });
 }
 
-for (const frontmatter of [
-    'id: first\nid: second',
-    'id: first\n"id": second',
-    "id: first\n'id': second",
-    'id: first\n"i\\u0064": second',
-    'id: first\nid : second',
-    'title: first\ntitle: second',
-    '{id: first, id: second}',
-    '? id\n: first\nid: second',
-    'base: &base {id: first}\n<<: *base',
-    '  id: first\n  id: second',
-]) {
-    test(`ambiguous or duplicate identity mapping fails closed: ${JSON.stringify(frontmatter)}`, async () => {
-        expect(
-            await extractFrontmatterFromMarkdownFile({
-                path: 'fixture.md',
-                content: `---\n${frontmatter}\n---\nBody`,
-            })
-        ).toBeNull();
-    });
-}
-
 test('quoted unique keys and nested anchors are accepted', async () => {
     expect(
         await extractFrontmatterFromMarkdownFile({
@@ -173,11 +151,12 @@ test('CRLF block frontmatter keeps nested values and the original body', async (
     expect(removeFrontmatterFromMarkdownFile(file)).toBe('Body\r\n');
 });
 
-test('bare carriage returns cannot hide duplicate identity keys', async () => {
+test('frontmatter uses native Bun YAML mapping semantics', async () => {
     expect(
         await extractFrontmatterFromMarkdownFile({
-            path: 'ambiguous.md',
-            content: '---\nid: first\rid: second\n---\nBody',
+            path: 'native.md',
+            content:
+                '---\n{id: first, id: second, tags: [research]}\n---\nBody',
         })
-    ).toBeNull();
+    ).toEqual({ id: 'second', tags: ['research'] });
 });

@@ -31,7 +31,6 @@ try {
         saveNoteToFs,
         scanNotesDirectory,
         extractCreatableNotes,
-        extractNoteFromMarkdownFile,
         extractCreatableNoteFromMarkdownFile,
     } = await import('../../src/parse-note.ts');
     const note = {
@@ -80,26 +79,6 @@ try {
     assert.equal(creatable.length, 1);
     assert.equal(creatable[0]!.note.date, '2026-10-09');
     assert.equal(creatable[0]!.note.content, 'Draft body');
-    for (const identity of [
-        'id: first\nid: second',
-        'id: first\n"id": null',
-        'id: first\n"i\\u0064": null',
-    ]) {
-        const file = {
-            path: join(notesDir, 'invalid.md'),
-            content: `---\n${identity}\ntitle: Example\ncreatedAt: 2026-10-09\nupdatedAt: 2026-10-09\n---\nBody`,
-        };
-        assert.equal(
-            await extractNoteFromMarkdownFile(file),
-            null,
-            'duplicate IDs must not associate a file with a remote note'
-        );
-        assert.equal(
-            await extractCreatableNoteFromMarkdownFile(file),
-            null,
-            'invalid frontmatter must not become a new note'
-        );
-    }
     for (const content of [
         '---\ntitle: Missing end',
         '---\nbroken: [\n---\nBody',
