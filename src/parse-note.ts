@@ -1,14 +1,6 @@
 import path, { join } from 'path';
 import type { NoteType, Note } from '@tt-services';
-import * as yaml from 'js-yaml';
-import {
-    readdir,
-    readFile,
-    writeFile,
-    stat,
-    exists,
-    unlink,
-} from 'fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import type {
     CreatableNote,
     NoteMetadata,
@@ -21,6 +13,16 @@ import {
 } from './utils.ts';
 import { NOTES_DIR } from './config.ts';
 import { $ } from 'bun';
+import {
+    formatNoteAsMarkdown,
+    readNoteMarkdown,
+    type NoteFile,
+} from './note-markdown.ts';
+export {
+    formatNoteAsMarkdown,
+    readNoteMarkdown,
+    type NoteFile,
+} from './note-markdown.ts';
 
 const logger = baseLogger.child({
     module: 'parse-note',
@@ -34,14 +36,6 @@ const requireNotesDir = (dir?: string) => {
         process.exit(1);
     }
     return notesDir;
-};
-
-export const getPrintableNoteContent = (note: NoteType | CreatableNote) => {
-    return Object.fromEntries(
-        Object.entries(note).filter(
-            ([key]) => key !== 'content' && key !== 'googleDocContent'
-        )
-    );
 };
 
 export async function generateNoteFilename(
@@ -58,25 +52,13 @@ export async function generateNoteFilename(
 
     while (true) {
         const notePath = path.join(notesDir, `${safeTitle}.md`);
-        if (!(await exists(notePath))) {
+        if (!(await Bun.file(notePath).exists())) {
             break;
         }
         safeTitle = `${safeTitle}-${Math.random().toString(36).substring(2, 15)}`;
     }
 
     return `${safeTitle}.md`;
-}
-
-export function formatNoteAsMarkdown(note: NoteType): string {
-    if ('_id' in note) {
-        delete note._id;
-    }
-
-    const allButContent = getPrintableNoteContent(note);
-
-    const fmString = yaml.dump(allButContent, { skipInvalid: true });
-
-    return ['---', fmString.trim(), '---', note.content].join('\n');
 }
 
 export async function saveNoteToFs(
@@ -88,9 +70,9 @@ export async function saveNoteToFs(
         shouldLog?: boolean;
     } = { dir: undefined, confirmOverwrite: false, shouldLog: true }
 ) {
-    const filename = await generateNoteFilename(note);
-    const content = formatNoteAsMarkdown(note);
     const notesDir = requireNotesDir(opts.dir);
+    const filename = await generateNoteFilename(note, notesDir);
+    const content = formatNoteAsMarkdown(note);
 
     const allLocalNotes = await scanNotesDirectory(notesDir);
     const existingNote = allLocalNotes.find(
@@ -117,7 +99,7 @@ export async function saveNoteToFs(
         (existingNote ? existingNote.path : path.join(notesDir, filename));
 
     const confirmOverwrite = opts.confirmOverwrite ?? false;
-    if (confirmOverwrite && (await exists(filePath))) {
+    if (confirmOverwrite && (await Bun.file(filePath).exists())) {
         const confirmed = await confirm(
             logger,
             `Note already exists locally at ${filePath}, overwrite?`
@@ -127,7 +109,7 @@ export async function saveNoteToFs(
             return;
         }
     }
-    await writeFile(filePath, content);
+    await Bun.write(filePath, content);
     if (opts.shouldLog ?? true) {
         logger.info(
             { title: note.title, path: filePath, id: note.id },
@@ -136,68 +118,11 @@ export async function saveNoteToFs(
     }
 }
 
-export type NoteFile = {
-    content: string;
-    path: string;
-};
-
-export async function extractFrontmatterFromMarkdownFile(
-    file: NoteFile
-): Promise<Record<string, any> | null> {
-    const lines = file.content.split('\n');
-
-    if (lines[0]?.trim() === '---') {
-        let fmEndIndex = -1;
-        for (let i = 1; i < lines.length; i++) {
-            if (lines[i].trim() === '---') {
-                fmEndIndex = i;
-                break;
-            }
-        }
-
-        if (fmEndIndex === -1) {
-            return null;
-        }
-
-        const frontmatterRaw = lines.slice(1, fmEndIndex).join('\n');
-        try {
-            const parsedYaml = yaml.load(frontmatterRaw);
-            if (typeof parsedYaml === 'object') {
-                return parsedYaml;
-            } else {
-                return null;
-            }
-        } catch (e) {
-            return null;
-        }
-    }
-    return null;
-}
-
-export function removeFrontmatterFromMarkdownFile(file: NoteFile): string {
-    const lines = file.content.split('\n');
-
-    if (lines[0]?.trim() === '---') {
-        let fmEndIndex = -1;
-        for (let i = 1; i < lines.length; i++) {
-            if (lines[i].trim() === '---') {
-                fmEndIndex = i;
-                break;
-            }
-        }
-
-        if (fmEndIndex !== -1) {
-            return lines.slice(fmEndIndex + 1).join('\n');
-        }
-    }
-
-    return file.content;
-}
-
 export async function extractNoteFromMarkdownFile(
     file: NoteFile
 ): Promise<NoteType | null> {
-    const frontmatter = await extractFrontmatterFromMarkdownFile(file);
+    const parsed = readNoteMarkdown(file);
+    const frontmatter = parsed?.data;
 
     if (!frontmatter) {
         logger.warn(
@@ -207,7 +132,7 @@ export async function extractNoteFromMarkdownFile(
         return null;
     }
 
-    const content = removeFrontmatterFromMarkdownFile(file);
+    const content = parsed!.content;
 
     const id = frontmatter?.id ?? null;
     if (!id) {
@@ -274,7 +199,15 @@ export async function extractNoteFromMarkdownFile(
 export async function extractCreatableNoteFromMarkdownFile(
     file: NoteFile
 ): Promise<CreatableNote | null> {
-    const frontmatter = await extractFrontmatterFromMarkdownFile(file);
+    const parsed = readNoteMarkdown(file);
+    const frontmatter = parsed?.data;
+    if (!parsed) {
+        logger.warn(
+            { path: file.path },
+            'Note file has invalid frontmatter, skipping'
+        );
+        return null;
+    }
 
     const id = frontmatter?.id ?? null;
     // Note already exists, skip
@@ -305,7 +238,7 @@ export async function extractCreatableNoteFromMarkdownFile(
 
     const tags = frontmatter?.tags ?? [];
 
-    const content = removeFrontmatterFromMarkdownFile(file);
+    const content = parsed!.content;
 
     return {
         title: title,
@@ -338,7 +271,7 @@ export async function scanNotesDirectory(notesDir?: string) {
     const notes: { note: NoteType; path: string }[] = [];
 
     for (const filePath of files) {
-        const content = await readFile(filePath, 'utf8');
+        const content = await Bun.file(filePath).text();
         const note = await extractNoteFromMarkdownFile({
             content,
             path: filePath,
@@ -362,7 +295,7 @@ export async function extractCreatableNotes(dir?: string) {
 
     for (const filePath of files) {
         const note = await extractCreatableNoteFromMarkdownFile({
-            content: await readFile(filePath, 'utf8'),
+            content: await Bun.file(filePath).text(),
             path: filePath,
         });
         if (note) {
@@ -415,14 +348,13 @@ export async function findRemoteNotesToDownload(dir?: string): Promise<Note[]> {
 type Conflict = {
     local: { note: NoteType; path: string };
     remote: Note;
-    conflictType: Array<{ key: string, localValue: any, remoteValue: any }>;
+    conflictType: Array<{ key: string; localValue: any; remoteValue: any }>;
 };
 
 async function getNotesDirHasGitChanges() {
     const dir = requireNotesDir();
     const { stdout } = await $`git -C ${dir} status --porcelain`.quiet();
     return stdout.toString().trim().length > 0;
-
 }
 
 async function getNotesDirShortStatus() {
@@ -488,12 +420,16 @@ async function handleConflict() {
                 process.exit(1);
             }
 
-            let conflictType: Array<{ key: string, localValue: any, remoteValue: any }> = [];
+            let conflictType: Array<{
+                key: string;
+                localValue: any;
+                remoteValue: any;
+            }> = [];
 
             // Get all unique keys from both notes
             const allKeys = new Set([
                 ...Object.keys(note),
-                ...Object.keys(remoteNote)
+                ...Object.keys(remoteNote),
             ]);
 
             for (const key of allKeys) {
@@ -502,14 +438,16 @@ async function handleConflict() {
                 if (key === 'googleDocContent') continue;
 
                 let localValue = note[key as keyof typeof note] ?? null;
-                let remoteValue = remoteNote[key as keyof typeof remoteNote] ?? null;
+                let remoteValue =
+                    remoteNote[key as keyof typeof remoteNote] ?? null;
 
                 // Special handling for content
                 if (key === 'content') {
-                    localValue = removeFrontmatterFromMarkdownFile({
-                        content: note.content,
-                        path: path,
-                    });
+                    localValue =
+                        readNoteMarkdown({
+                            content: note.content,
+                            path: path,
+                        })?.content ?? note.content;
                 }
 
                 if (Array.isArray(localValue) || Array.isArray(remoteValue)) {
@@ -517,13 +455,25 @@ async function handleConflict() {
                     remoteValue = JSON.stringify(remoteValue);
                 }
 
-                if (typeof localValue === 'object' && typeof remoteValue === 'object') {
+                if (
+                    typeof localValue === 'object' &&
+                    typeof remoteValue === 'object'
+                ) {
                     localValue = JSON.stringify(localValue);
                     remoteValue = JSON.stringify(remoteValue);
                 }
 
                 if (localValue !== remoteValue) {
-                    logger.info({ key, localValue, remoteValue, type: typeof localValue, type2: typeof remoteValue }, "Conflict");
+                    logger.info(
+                        {
+                            key,
+                            localValue,
+                            remoteValue,
+                            type: typeof localValue,
+                            type2: typeof remoteValue,
+                        },
+                        'Conflict'
+                    );
                     conflictType.push({ key, localValue, remoteValue });
                 }
             }
@@ -588,8 +538,13 @@ async function handleConflict() {
     logger.info('Starting to push changes to server');
 
     for (const conflict of conflicts) {
-
-        logger.info({ noteTitle: conflict.remote.title, conflictType: conflict.conflictType }, 'Found conflicts for note');
+        logger.info(
+            {
+                noteTitle: conflict.remote.title,
+                conflictType: conflict.conflictType,
+            },
+            'Found conflicts for note'
+        );
 
         const confirmPush = await confirm(
             logger,
@@ -625,7 +580,7 @@ async function ensureAllFilesAreTracked() {
     const localIdToPath = new Map<string, string>();
 
     for (const filePath of files) {
-        const content = await readFile(filePath, 'utf8');
+        const content = await Bun.file(filePath).text();
         let note = await extractNoteFromMarkdownFile({
             content,
             path: filePath,
@@ -688,7 +643,7 @@ async function ensureAllFilesAreTracked() {
                 note = createdNote;
             } else if (option === 'delete') {
                 logger.info({ note }, 'Deleting note');
-                await unlink(filePath);
+                await Bun.file(filePath).delete();
                 continue;
             } else {
                 logger.info('Exiting');
@@ -707,10 +662,10 @@ async function ensureAllFilesAreTracked() {
 
             if (option === `delete ${duplicatePath}`) {
                 logger.info({ note }, 'Deleting note');
-                await unlink(duplicatePath);
+                await Bun.file(duplicatePath).delete();
             } else if (option === `delete ${filePath}`) {
                 logger.info({ note }, 'Deleting note');
-                await unlink(filePath);
+                await Bun.file(filePath).delete();
             } else {
                 logger.info('Exiting');
                 process.exit(0);

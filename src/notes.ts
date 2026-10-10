@@ -1,9 +1,7 @@
 import type { NoteMetadata as NoteType, Note } from '@tt-services';
 import { join } from 'path';
 import { homedir } from 'os';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import { $ } from 'bun';
+export { openNoteLink, openGoogleDocLink } from './browser.ts';
 import { getTT } from './utils.ts';
 
 const CACHE_DIR = join(homedir(), '.cache', 'tt-cli');
@@ -15,19 +13,10 @@ interface CacheData {
     notes: NoteType[];
 }
 
-async function ensureCacheDir() {
-    if (!existsSync(CACHE_DIR)) {
-        await mkdir(CACHE_DIR, { recursive: true });
-    }
-}
-
 export async function getNotes(): Promise<NoteType[]> {
-    await ensureCacheDir();
-
     try {
-        if (existsSync(NOTES_CACHE_FILE)) {
-            const cacheContent = await readFile(NOTES_CACHE_FILE, 'utf-8');
-            const cache: CacheData = JSON.parse(cacheContent);
+        if (await Bun.file(NOTES_CACHE_FILE).exists()) {
+            const cache: CacheData = await Bun.file(NOTES_CACHE_FILE).json();
             if (Date.now() - cache.timestamp <= CACHE_TTL) {
                 return cache.notes;
             }
@@ -40,7 +29,7 @@ export async function getNotes(): Promise<NoteType[]> {
 
     try {
         const cacheData: CacheData = { timestamp: Date.now(), notes };
-        await writeFile(NOTES_CACHE_FILE, JSON.stringify(cacheData, null, 2));
+        await Bun.write(NOTES_CACHE_FILE, JSON.stringify(cacheData, null, 2));
     } catch (error) {
         // Non-fatal
     }
@@ -53,18 +42,13 @@ export async function getNotesAndUntrackedGoogleDocs(
 ) {
     const GOOGLE_NOTES_CACHE_FILE = join(CACHE_DIR, 'google-notes.json');
 
-    await ensureCacheDir();
-
     // Check cache unless ignoreCache is true
     if (!options.ignoreCache) {
         try {
-            if (existsSync(GOOGLE_NOTES_CACHE_FILE)) {
-                const cacheContent = await readFile(
-                    GOOGLE_NOTES_CACHE_FILE,
-                    'utf-8'
-                );
-                const cache: CacheData & { googleDocs: any[] } =
-                    JSON.parse(cacheContent);
+            if (await Bun.file(GOOGLE_NOTES_CACHE_FILE).exists()) {
+                const cache: CacheData & { googleDocs: any[] } = await Bun.file(
+                    GOOGLE_NOTES_CACHE_FILE
+                ).json();
 
                 // Return cached data if within TTL or ignoreTimeout is true
                 if (
@@ -92,7 +76,7 @@ export async function getNotesAndUntrackedGoogleDocs(
             notes: notesAndUntrackedGoogleDocs.notes,
             googleDocs: notesAndUntrackedGoogleDocs.googleDocs,
         };
-        await writeFile(
+        await Bun.write(
             GOOGLE_NOTES_CACHE_FILE,
             JSON.stringify(cacheData, null, 2)
         );
@@ -137,12 +121,4 @@ export function displayNotes(
 export async function getNoteById(id: string): Promise<Note | null> {
     const tt = await getTT();
     return tt.notes.getNoteById(id);
-}
-
-export async function openNoteLink(id: string) {
-    await $`xdg-open https://tylertracy.com/notes/${id}`.quiet();
-}
-
-export async function openGoogleDocLink(id: string) {
-    await $`xdg-open https://docs.google.com/document/d/${id}`.quiet();
 }

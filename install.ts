@@ -2,35 +2,34 @@
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { $ } from 'bun';
+import { writeFile } from 'node:fs/promises';
 
 // Paths
 const cliFilePath = join(dirname(import.meta.path), 'src', 'cli.ts');
 const tempScriptPath = join(dirname(import.meta.path), 'tt');
 const binPath = '/usr/local/bin/tt';
 
-function makeScriptContent(): string {
-    const bunBinPath = Bun.which('bun');
-    if (!bunBinPath) {
-        throw new Error('Bun is not installed');
-    }
-    return `#!/usr/bin/env bash\nset -euo pipefail\nexec ${bunBinPath} run \"${cliFilePath}\" \"$@\"\n`;
+function shellQuote(value: string) {
+    return "'" + value.replaceAll("'", "'\\''") + "'";
 }
 
-async function ensureDirectory(path: string) {
-    await $`mkdir -p ${path}`.quiet();
+function makeScriptContent(): string {
+    return `#!/usr/bin/env bash\nset -euo pipefail\nexec ${shellQuote(process.execPath)} --env-file="$HOME/.config/tt-cli/.env" ${shellQuote(cliFilePath)} "$@"\n`;
 }
 
 async function createConfigFile() {
     const configDir = join(homedir(), '.config', 'tt-cli');
     const envPath = join(configDir, '.env');
-
-    await ensureDirectory(configDir);
-
-    // Create default .env if it doesn't exist
-    if (!(await Bun.file(envPath).exists())) {
-        await Bun.write(envPath, '# TT-CLI Configuration\n');
+    await $`mkdir -p ${configDir}`.quiet();
+    // Keep credential files private; exclusive creation prevents overwrites.
+    try {
+        await writeFile(envPath, '# TT-CLI Configuration\n', {
+            flag: 'wx',
+            mode: 0o600,
+        });
         console.log('Created config file at:', envPath);
-    } else {
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         console.log('Config file already exists at:', envPath);
     }
 }
@@ -68,4 +67,4 @@ async function install() {
     }
 }
 
-install();
+if (import.meta.main) await install();
