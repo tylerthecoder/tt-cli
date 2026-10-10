@@ -15,15 +15,12 @@ import { NOTES_DIR } from './config.ts';
 import { $ } from 'bun';
 import {
     formatNoteAsMarkdown,
-    extractFrontmatterFromMarkdownFile,
-    removeFrontmatterFromMarkdownFile,
+    readNoteMarkdown,
     type NoteFile,
 } from './note-markdown.ts';
 export {
-    getPrintableNoteContent,
     formatNoteAsMarkdown,
-    extractFrontmatterFromMarkdownFile,
-    removeFrontmatterFromMarkdownFile,
+    readNoteMarkdown,
     type NoteFile,
 } from './note-markdown.ts';
 
@@ -124,7 +121,8 @@ export async function saveNoteToFs(
 export async function extractNoteFromMarkdownFile(
     file: NoteFile
 ): Promise<NoteType | null> {
-    const frontmatter = await extractFrontmatterFromMarkdownFile(file);
+    const parsed = readNoteMarkdown(file);
+    const frontmatter = parsed?.data;
 
     if (!frontmatter) {
         logger.warn(
@@ -134,7 +132,7 @@ export async function extractNoteFromMarkdownFile(
         return null;
     }
 
-    const content = removeFrontmatterFromMarkdownFile(file);
+    const content = parsed!.content;
 
     const id = frontmatter?.id ?? null;
     if (!id) {
@@ -201,8 +199,9 @@ export async function extractNoteFromMarkdownFile(
 export async function extractCreatableNoteFromMarkdownFile(
     file: NoteFile
 ): Promise<CreatableNote | null> {
-    const frontmatter = await extractFrontmatterFromMarkdownFile(file);
-    if (!frontmatter && file.content.split('\n', 1)[0]?.trim() === '---') {
+    const parsed = readNoteMarkdown(file);
+    const frontmatter = parsed?.data;
+    if (!parsed) {
         logger.warn(
             { path: file.path },
             'Note file has invalid frontmatter, skipping'
@@ -239,7 +238,7 @@ export async function extractCreatableNoteFromMarkdownFile(
 
     const tags = frontmatter?.tags ?? [];
 
-    const content = removeFrontmatterFromMarkdownFile(file);
+    const content = parsed!.content;
 
     return {
         title: title,
@@ -444,10 +443,11 @@ async function handleConflict() {
 
                 // Special handling for content
                 if (key === 'content') {
-                    localValue = removeFrontmatterFromMarkdownFile({
-                        content: note.content,
-                        path: path,
-                    });
+                    localValue =
+                        readNoteMarkdown({
+                            content: note.content,
+                            path: path,
+                        })?.content ?? note.content;
                 }
 
                 if (Array.isArray(localValue) || Array.isArray(remoteValue)) {

@@ -6,17 +6,12 @@ export function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-export async function runPager(
-    content: string,
-    start = (input: Blob): Pick<Bun.Subprocess, 'exited' | 'signalCode'> =>
-        Bun.spawn(['less', '-R'], {
-            stdin: input,
-            stdout: 'inherit',
-            stderr: 'inherit',
-        })
-): Promise<void> {
-    // Bun feeds stdin and closes it, including when the pager quits early.
-    const pager = start(new Blob([content]));
+export async function runPager(content: string): Promise<void> {
+    const pager = Bun.spawn(['less', '-R'], {
+        stdin: new Blob([content]),
+        stdout: 'inherit',
+        stderr: 'inherit',
+    });
     const code = await pager.exited;
     if (code !== 0) {
         throw new Error(

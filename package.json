@@ -6,6 +6,7 @@
         "@openai/agents": "^0.0.15",
         "@tt-services": "github:tylerthecoder/tt-services#56fe227c841db750e13bd697142239161fcb6f8b",
         "commander": "^11.1.0",
+        "gray-matter": "^4.0.3",
         "ink": "^4.4.1",
         "inquirer": "^12.11.1",
         "pino": "^9.14.0",

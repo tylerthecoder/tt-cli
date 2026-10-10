@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { existsSync } from 'node:fs';
 import { join } from 'path';
 
 const homes: string[] = [];
@@ -39,13 +40,11 @@ async function runConfig(settings?: string) {
     return { home, dir, stdout, stderr, code };
 }
 
-test('first run creates settings without polluting stdout', async () => {
+test('missing settings return defaults without creating files', async () => {
     const result = await runConfig();
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({});
-    expect(
-        JSON.parse(await readFile(join(result.dir, 'settings.json'), 'utf8'))
-    ).toEqual({});
+    expect(existsSync(result.dir)).toBe(false);
 });
 
 test('expands documented home-relative notes directory and preserves settings', async () => {

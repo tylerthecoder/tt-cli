@@ -1,24 +1,15 @@
 import { join } from 'path';
 import { homedir } from 'os';
-import { loadEnvironment } from './environment.ts';
-import { mkdir, writeFile } from 'node:fs/promises';
 
-export async function loadSettings(home = homedir()) {
-    const configDir = join(home, '.config', 'tt-cli');
-    const settingsPath = join(configDir, 'settings.json');
-    await mkdir(configDir, { recursive: true });
+const home = homedir();
+const settingsPath = join(home, '.config', 'tt-cli', 'settings.json');
 
-    // Exclusive creation preserves settings if another invocation starts first.
-    try {
-        await writeFile(settingsPath, '{}\n', { flag: 'wx', mode: 0o600 });
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    }
-
+async function loadSettings() {
     let settings: unknown;
     try {
         settings = await Bun.file(settingsPath).json();
-    } catch {
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
         throw new Error(
             `Cannot read settings at ${settingsPath}. Expected valid JSON.`
         );
@@ -46,5 +37,4 @@ export async function loadSettings(home = homedir()) {
     };
 }
 
-await loadEnvironment();
 export const NOTES_DIR = (await loadSettings()).notes_dir;

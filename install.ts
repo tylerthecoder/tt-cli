@@ -13,15 +13,12 @@ function shellQuote(value: string) {
     return "'" + value.replaceAll("'", "'\\''") + "'";
 }
 
-export function makeScriptContent(
-    bunBinPath = process.execPath,
-    cliPath = cliFilePath
-): string {
-    return `#!/usr/bin/env bash\nset -euo pipefail\nexec ${shellQuote(bunBinPath)} run ${shellQuote(cliPath)} "$@"\n`;
+function makeScriptContent(): string {
+    return `#!/usr/bin/env bash\nset -euo pipefail\nexec ${shellQuote(process.execPath)} --env-file="$HOME/.config/tt-cli/.env" ${shellQuote(cliFilePath)} "$@"\n`;
 }
 
-export async function createConfigFile(home = homedir()) {
-    const configDir = join(home, '.config', 'tt-cli');
+async function createConfigFile() {
+    const configDir = join(homedir(), '.config', 'tt-cli');
     const envPath = join(configDir, '.env');
     await $`mkdir -p ${configDir}`.quiet();
     // Keep credential files private; exclusive creation prevents overwrites.

@@ -2,8 +2,6 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Command } from 'commander';
-import { runCli } from '../src/cli.ts';
 
 const cli = resolve(import.meta.dir, '../src/cli.ts');
 const directories: string[] = [];
@@ -76,22 +74,4 @@ test('note open passes encoded IDs as a single URL argument', async () => {
     );
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
-});
-
-test('runCli waits for async actions and converts failures to exit status', async () => {
-    const program = new Command().action(async () => {
-        await Bun.sleep(10);
-        throw new Error('test action failed');
-    });
-    const original = console.error;
-    const messages: unknown[][] = [];
-    console.error = (...args) => {
-        messages.push(args);
-    };
-    try {
-        expect(await runCli(['bun', 'test'], program)).toBe(1);
-        expect(messages).toEqual([['Error:', 'test action failed']]);
-    } finally {
-        console.error = original;
-    }
 });

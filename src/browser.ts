@@ -1,5 +1,6 @@
-async function launchBrowser(command: string, args: string[]) {
-    const child = Bun.spawn([command, ...args], {
+async function openLink(url: string) {
+    const command = process.platform === 'darwin' ? 'open' : 'xdg-open';
+    const child = Bun.spawn([command, url], {
         stdin: 'ignore',
         stdout: 'ignore',
         stderr: 'pipe',
@@ -9,27 +10,8 @@ async function launchBrowser(command: string, args: string[]) {
         new Response(child.stderr).text(),
     ]);
     if (code !== 0) {
-        throw new Error(
-            `${command} exited with ${child.signalCode || `status ${code}`}${stderr.trim() ? `: ${stderr.trim()}` : ''}`
-        );
+        throw new Error(`${command} failed (${code}): ${stderr.trim()}`);
     }
-}
-
-export function browserCommand(url: string, platform = process.platform) {
-    if (platform === 'darwin') return ['open', url] as const;
-    if (platform === 'linux') return ['xdg-open', url] as const;
-    throw new Error(`Opening a browser is not supported on ${platform}`);
-}
-
-export async function openLink(
-    url: string,
-    options: {
-        platform?: NodeJS.Platform;
-        launch?: (command: string, args: string[]) => Promise<unknown>;
-    } = {}
-) {
-    const [command, argument] = browserCommand(url, options.platform);
-    await (options.launch ?? launchBrowser)(command, [argument]);
 }
 
 export async function openNoteLink(id: string) {

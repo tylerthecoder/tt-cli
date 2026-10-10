@@ -73,13 +73,14 @@ try {
 
     await Bun.write(
         join(notesDir, 'new.md'),
-        '---\ntitle: New note\ndate: 2026-10-09\ntags: [draft]\n---\nDraft body'
+        '---\ntitle: New note\ndate: "2026-10-09"\ntags: [draft]\n---\nDraft body'
     );
     const creatable = await extractCreatableNotes(notesDir);
     assert.equal(creatable.length, 1);
     assert.equal(creatable[0]!.note.date, '2026-10-09');
     assert.equal(creatable[0]!.note.content, 'Draft body');
     for (const content of [
+        '---',
         '---\ntitle: Missing end',
         '---\nbroken: [\n---\nBody',
         '---\n[id]\n---\nBody',

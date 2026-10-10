@@ -1,9 +1,7 @@
 import { expect, test } from 'bun:test';
-import type { NoteType } from '@tt-services';
 import {
-    extractFrontmatterFromMarkdownFile,
     formatNoteAsMarkdown,
-    removeFrontmatterFromMarkdownFile,
+    readNoteMarkdown,
 } from '../src/note-markdown.ts';
 
 const metadata = {
@@ -16,147 +14,61 @@ const metadata = {
     updatedAt: '2026-10-09T12:00:00.000Z',
 };
 
-async function roundTrip(extra: Record<string, unknown> = {}) {
-    const note = { ...metadata, content: '# Body\n\nA paragraph.\n', ...extra };
-    const file = {
-        path: 'fixture.md',
-        content: formatNoteAsMarkdown(note as NoteType),
-    };
-    return {
-        note,
-        file,
-        parsed: await extractFrontmatterFromMarkdownFile(file),
-    };
-}
-
-test('Bun YAML preserves note metadata and exact Markdown body', async () => {
-    const { note, file, parsed } = await roundTrip();
-    expect(parsed).toEqual(metadata);
-    expect(removeFrontmatterFromMarkdownFile(file)).toBe(note.content);
-});
-
-test('Bun YAML preserves scalar-looking strings, nulls, arrays, and nested metadata', async () => {
-    const extra = {
-        aliases: ['true', 'false', 'null', '001', '2026-10-09', 'yes', 'on'],
-        nil: null,
-        nested: { count: 4, ratio: 0.25, enabled: true, tags: ['a', 'b'] },
-        description: 'First line\nSecond line\n',
-    };
-    expect((await roundTrip(extra)).parsed).toEqual({ ...metadata, ...extra });
-});
-
-test('formatting does not delete database IDs or alter the input note', async () => {
-    const note = Object.freeze({
-        ...metadata,
-        content: 'Body',
-        _id: 'database-only-id',
-        googleDocContent: 'database-only-content',
-    });
-    const content = formatNoteAsMarkdown(note as NoteType);
-    const parsed = await extractFrontmatterFromMarkdownFile({
-        path: 'fixture.md',
-        content,
-    });
-    expect(parsed).toEqual(metadata);
-    expect(note._id).toBe('database-only-id');
-    expect(note.googleDocContent).toBe('database-only-content');
-});
-
-test('legacy YAML timestamps, quoted strings, anchors, and merge keys remain usable', async () => {
-    const parsed = await extractFrontmatterFromMarkdownFile({
-        path: 'legacy.md',
-        content: `---
-id: note-id
-title: 'true'
-date: 2026-10-09
-createdAt: 2026-10-09T12:00:00.000Z
-defaults: &defaults
-  published: false
-  tags: [daily, research]
-settings:
-  <<: *defaults
-  title: Override
-aliases: *defaults
----
-Body`,
-    });
-    expect(parsed).toEqual({
-        id: 'note-id',
-        title: 'true',
-        date: '2026-10-09',
-        createdAt: '2026-10-09T12:00:00.000Z',
-        defaults: { published: false, tags: ['daily', 'research'] },
-        settings: {
-            published: false,
-            tags: ['daily', 'research'],
-            title: 'Override',
-        },
-        aliases: { published: false, tags: ['daily', 'research'] },
-    });
-});
-
-test('YAML merge keys cannot change the parsed object prototype', async () => {
-    const parsed = await extractFrontmatterFromMarkdownFile({
-        path: 'fixture.md',
-        content:
-            '---\nbase: &base\n  __proto__: {polluted: true}\nnote:\n  <<: *base\n---\n',
-    });
-    expect(Object.getPrototypeOf(parsed!.note)).toBe(Object.prototype);
-    expect(parsed!.note.polluted).toBeUndefined();
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-});
-
-for (const frontmatter of [
+for (const content of [
     '',
-    'null',
-    '[a, b]',
-    'just a string',
-    'broken: [',
+    'Body without trailing newline',
+    '# Body\n\nParagraph.\n',
+    'Body\r\n',
+    '---\nBody starts with a rule\n',
 ]) {
-    test(`non-mapping or invalid frontmatter is rejected: ${JSON.stringify(frontmatter)}`, async () => {
-        expect(
-            await extractFrontmatterFromMarkdownFile({
-                path: 'fixture.md',
-                content: `---\n${frontmatter}\n---\nBody`,
-            })
-        ).toBeNull();
+    test(`note formatting preserves metadata and exact body: ${JSON.stringify(content)}`, () => {
+        const note = Object.freeze({
+            ...metadata,
+            content,
+            _id: 'database-id',
+            googleDocContent: 'remote content',
+        });
+        const parsed = readNoteMarkdown({
+            path: 'fixture.md',
+            content: formatNoteAsMarkdown(note),
+        });
+        expect(parsed).toEqual({ data: metadata, content });
+        expect(note._id).toBe('database-id');
+        expect(note.googleDocContent).toBe('remote content');
     });
 }
 
-test('quoted unique keys and nested anchors are accepted', async () => {
+test('plain Markdown remains available for creating a note', () => {
     expect(
-        await extractFrontmatterFromMarkdownFile({
-            path: 'fixture.md',
-            content:
-                '---\n"id": example\n\'title\': Title\nextra data: &extra\n  description: Nested\n  id: nested-id\ncopy: *extra\n---\nBody',
-        })
-    ).toEqual({
-        id: 'example',
-        title: 'Title',
-        'extra data': { description: 'Nested', id: 'nested-id' },
-        copy: { description: 'Nested', id: 'nested-id' },
-    });
+        readNoteMarkdown({ path: 'draft.md', content: '# Draft\n' })
+    ).toEqual({ data: {}, content: '# Draft\n' });
 });
 
-test('CRLF block frontmatter keeps nested values and the original body', async () => {
-    const file = {
-        path: 'windows.md',
-        content:
-            '---\r\nid: windows-note\r\ntags:\r\n  - research\r\n---\r\nBody\r\n',
-    };
-    expect(await extractFrontmatterFromMarkdownFile(file)).toEqual({
-        id: 'windows-note',
-        tags: ['research'],
-    });
-    expect(removeFrontmatterFromMarkdownFile(file)).toBe('Body\r\n');
+test('malformed frontmatter is rejected', () => {
+    for (const content of [
+        '---',
+        '---\ntitle: Missing end',
+        '---\nbroken: [\n---\nBody',
+        '---\n[id]\n---\nBody',
+    ]) {
+        expect(readNoteMarkdown({ path: 'invalid.md', content })).toBeNull();
+    }
 });
 
-test('frontmatter uses native Bun YAML mapping semantics', async () => {
-    expect(
-        await extractFrontmatterFromMarkdownFile({
-            path: 'native.md',
-            content:
-                '---\n{id: first, id: second, tags: [research]}\n---\nBody',
-        })
-    ).toEqual({ id: 'second', tags: ['research'] });
+test('language-tagged JavaScript never executes', () => {
+    for (const language of ['javascript', 'js', 'JavaScript']) {
+        const original = process.env.TT_FRONTMATTER_EXECUTED;
+        try {
+            delete process.env.TT_FRONTMATTER_EXECUTED;
+            const content = `---${language}\n(process.env.TT_FRONTMATTER_EXECUTED = 'yes', {title: 'Executed'})\n---\nBody`;
+            expect(
+                readNoteMarkdown({ path: 'untrusted.md', content })
+            ).toBeNull();
+            expect(process.env.TT_FRONTMATTER_EXECUTED).toBeUndefined();
+        } finally {
+            if (original === undefined)
+                delete process.env.TT_FRONTMATTER_EXECUTED;
+            else process.env.TT_FRONTMATTER_EXECUTED = original;
+        }
+    }
 });

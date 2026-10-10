@@ -1,39 +1,34 @@
 # tt-cli
 
-A Bun-native CLI for listing, browsing, and syncing Tyler's Things notes.
+A Bun CLI for listing, browsing, and syncing Tyler's Things notes.
 
 ## Setup
 
-Install [Bun](https://bun.sh) 1.3.14 or newer, then install the locked dependencies:
+Install [Bun](https://bun.sh) 1.3.14 or newer:
 
 ```bash
 bun install --frozen-lockfile
 bun run cli --help
-```
-
-To install the `tt` wrapper in `/usr/local/bin` (requires sudo):
-
-```bash
 bun run install.ts
 ```
 
-The wrapper points to this checkout, so keep it at the same path after installing.
+The installer writes a `tt` launcher to `/usr/local/bin` (requires sudo).
+It points to this checkout, so keep the checkout at the same path.
 
-Bun loads local `.env` files at startup. Commands also load defaults from
-`~/.config/tt-cli/.env` using Bun's native environment parser, falling back to
-`.env` in the current directory if the home file is absent. Exported variables
-and values already loaded by Bun take precedence. Unreadable config files produce
-an error. Help and version commands work without credentials.
+The installed launcher passes `~/.config/tt-cli/.env` to Bun's `--env-file`.
+For development, `bun run cli` uses Bun's normal local `.env` loading. Exported
+variables take precedence; the application has no custom environment loader.
 
-Sync settings live in `~/.config/tt-cli/settings.json`. The directory and an
-empty settings file are created when first needed. Set `notes_dir` before syncing;
-both absolute paths and `~/` paths are supported:
+Set the notes directory in `~/.config/tt-cli/settings.json`:
 
 ```json
 {
     "notes_dir": "~/Documents/Notes"
 }
 ```
+
+Settings reads never create or change files. Missing settings use defaults;
+sync requires `notes_dir`. Absolute paths and `~/` paths are supported.
 
 ## Usage
 
@@ -45,30 +40,19 @@ tt note open NOTE_ID
 tt notes tui
 ```
 
-Browser opening supports macOS and Linux. The TUI uses `j`/`k` or arrow keys to
-navigate, `/` to search, `t` to filter tags, `o` to open in the browser, `v` to
-view a note in `less`, `r` to refresh, and `q` to quit. Google Docs open in the
-browser. Loading and opening errors appear in the TUI so you can retry.
+Browser opening supports macOS and Linux. In the TUI: `j`/`k` navigate, `/`
+searches, `t` filters tags, `o` opens the browser, `v` views a note in `less`,
+`r` refreshes, and `q` quits. Loading and opening errors allow retry.
 
 `tt notes sync` is interactive and can modify local notes, Git history, and
-remote records after its prompts. It is not a read-only validation command.
-
-## Bun-native implementation
-
-File contents, JSON settings, and caches use `Bun.file()` and `Bun.write()`;
-browser and pager processes use `Bun.spawn()`. Note frontmatter uses
-`Bun.YAML.parse()` and `Bun.YAML.stringify()` directly. Note timestamps are ISO
-strings, as defined by tt-services. Frontmatter follows Bun's native YAML parsing
-semantics, including keeping the last value for duplicate keys. Invalid or
-non-mapping frontmatter is never uploaded as a new note.
-Directory operations and exclusive private config creation use Bun's built-in
-Node-compatible filesystem APIs where needed.
-
-There are no direct `js-yaml`, `dotenv`, `react-devtools-core`, or `bun-pty`
-dependencies. Some still appear transitively through tooling or `tt-services`.
-The interactive prompt, command parser, and TUI libraries remain in use.
+remote records after its prompts.
 
 ## Development
+
+Bun handles file I/O, subprocesses, and environment loading. `gray-matter`
+handles YAML frontmatter with its standard YAML semantics; application code
+preserves Markdown bodies and prevents malformed frontmatter from becoming
+new notes. Executable JavaScript frontmatter is disabled.
 
 ```bash
 bun test
@@ -78,12 +62,9 @@ bun run typecheck
 bun audit
 ```
 
-Tests use temporary homes and stubbed services/browser/pager processes. They do
-not sync real notes or require credentials.
+Tests use temporary homes and stubbed services/executables, not real notes or
+credentials. Live sync and agent API calls are not covered.
 
-The pinned `@tt-services` source currently has type-only import errors under
-`verbatimModuleSyntax`, so the full typecheck reports dependency errors. Keep
-that check visible rather than suppressing it. The compatible dependency refresh
-leaves one moderate `uuid` advisory in the Google API dependency chain; resolving
-it requires a separately tested dependency upgrade. Live authenticated sync and
-agent API compatibility are not exercised by this test suite.
+Typechecking currently reports type-only import errors in the pinned
+`tt-services` dependency. The dependency audit reports two moderate advisories:
+`uuid` in the Google API chain and `sprintf-js` through `gray-matter`.
